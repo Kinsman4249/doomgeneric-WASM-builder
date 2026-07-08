@@ -560,6 +560,23 @@ the crash and the game now runs.
 28. Documented that Boom-format WADs remain out of scope: limit removal
     fixes overflow crashes, not missing Boom features.
 
+### Readable engine errors (same day, round five)
+
+29. Fixed a WebAssembly trap in the engine's error path: a boolean-returning
+    function was registered as a void exit handler through a cast
+    (`d_main.c`), so every I_Error died as an opaque "function signature
+    mismatch" instead of exiting cleanly. A signature-correct wrapper fixes
+    it; behavior is otherwise identical.
+30. The page now captures the engine's console output and shows the last
+    lines in the red error box, so the engine's own explanation is visible
+    without opening developer tools. A watchdog also reports the case where
+    the engine stops before rendering its first frame, which is how clean
+    engine errors look from the outside.
+31. The setup screen detects the shareware-IWAD-plus-PWADs combination by
+    reading the WAD's lump directory, and refuses with a clear warning
+    before starting, instead of letting the engine refuse after the screen
+    has already switched over.
+
 ## Legal note
 
 The doomgeneric engine source, and the underlying Doom engine, is GPL licensed
@@ -625,11 +642,13 @@ legally own, or the freely distributable shareware `doom1.wad`.
     press and release both mouse buttons once, and please open an issue
     with your browser name and version.
 
-11. The red error box says something like "You cannot -file with the
-    shareware version" right after starting with PWADs selected. That is
-    the engine itself refusing: add-on files require a full IWAD
-    (registered, retail, or Freedoom), not the shareware `doom1.wad`.
-    Reload and start again with a full IWAD, or without PWADs.
+11. "You cannot -file with the shareware version" when starting with PWADs
+    selected. That is the engine refusing by design: add-on files require a
+    full IWAD (registered, retail, or Freedoom), not the shareware
+    `doom1.wad`. The setup screen now detects this combination up front
+    (it reads the WAD's lump directory the same way the engine does) and
+    shows a warning instead of starting, so you should normally never see
+    the engine version of this error anymore.
 
 12. A PWAD loads but replaced sprites or floor textures look unchanged.
     Vanilla WAD loading limitation; see "Loading PWADs (mods)".
@@ -648,6 +667,20 @@ legally own, or the freely distributable shareware `doom1.wad`.
     switches and doors simply do nothing. That is a Boom-format map, which
     this vanilla engine does not support; no limit setting fixes that. See
     the format caveat under "Loading PWADs (mods)".
+
+17. `RuntimeError: function signature mismatch` in an older build whenever
+    the engine hit any error. Fixed by an engine patch: vanilla registered
+    a boolean-returning function as an exit handler through a cast, which
+    x86 tolerates but WebAssembly traps on, so every engine error crashed
+    opaquely instead of exiting with its message. Engine errors now exit
+    cleanly, and the page shows the engine's own output in the red error
+    box (plus a watchdog catches the case where the engine stops before
+    rendering its first frame).
+
+18. A warning about `emscripten_set_main_loop_timing` and "a main loop does
+    not exist" appears in the console at boot. Harmless: SDL tries to set
+    its frame timing before the engine's main loop is registered a moment
+    later. It has always been there and affects nothing.
 
 13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game

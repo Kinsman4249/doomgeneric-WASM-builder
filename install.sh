@@ -293,9 +293,49 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #     plats, ceilings, buttons, line animations, savegame size) are enlarged
 #     8x-32x so slaughter-grade maps stop crashing or corrupting memory.
 #     Pure size bumps: no code paths change, gameplay stays identical, and
-#     Chocolate Doom overrun EMULATIONS stay untouched.
+#     Chocolate Doom overrun EMULATIONS stay untouched,
+#   - a WebAssembly fix for the engine error path: vanilla registered a
+#     boolean-returning function as a void exit handler through a cast,
+#     which x86 tolerates but WASM rejects with a "function signature
+#     mismatch" trap, turning every engine error into an opaque crash
+#     instead of a clean exit with its real message.
 log "Writing engine patch (mouse look, frame counter, limit removal)..."
 cat > wasm-builder-engine.patch << 'PATCH_EOF'
+diff --git a/doomgeneric/d_main.c b/doomgeneric/d_main.c
+index 9012e5f..5f6850f 100644
+--- a/doomgeneric/d_main.c
++++ b/doomgeneric/d_main.c
+@@ -1157,6 +1157,18 @@ static void LoadIwadDeh(void)
+ }
+ #endif
+ 
++// [WASM-builder] Exit functions must be exactly void(*)(void).
++// G_CheckDemoStatus returns a boolean, and vanilla registered it with a
++// cast, which x86 tolerates but WebAssembly rejects with a hard trap
++// ("function signature mismatch") the moment an exit function runs,
++// turning every engine error into an opaque crash. This tiny wrapper
++// has the right signature and simply ignores the return value, exactly
++// like the original cast pretended to.
++static void G_CheckDemoStatusAtExit(void)
++{
++    G_CheckDemoStatus();
++}
++
+ //
+ // D_DoomMain
+ //
+@@ -1510,7 +1522,10 @@ void D_DoomMain (void)
+         printf("Playing demo %s.\n", file);
+     }
+ 
+-    I_AtExit((atexit_func_t) G_CheckDemoStatus, true);
++    // [WASM-builder] Registered through a signature-correct wrapper; see
++    // G_CheckDemoStatusAtExit above D_DoomMain for why the original
++    // cast trapped on WebAssembly.
++    I_AtExit(G_CheckDemoStatusAtExit, true);
+ 
+     // Generate the WAD hash table.  Speed things up a bit.
+     W_GenerateHashTable();
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
 index 7076dd2..80e54cf 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
@@ -882,6 +922,16 @@ cat > index.html << 'HTML_EOF'
   #keybinds label { display: block; margin: 6px 0; }
   #keybinds input { width: 120px; }
   .hint { font-size: 0.85em; opacity: 0.7; }
+  /* Setup-screen warning (for example shareware WAD + PWADs selected). */
+  #setupwarn {
+    display: none;               /* shown from JavaScript when relevant */
+    padding: 8px 12px;
+    border: 1px solid #a33;
+    border-radius: 6px;
+    background: rgba(60, 10, 10, 0.5);
+    color: #f2b8b8;
+    font-size: 0.9em;
+  }
   button { font-family: monospace; cursor: pointer; }
 
   /*
@@ -1106,6 +1156,9 @@ cat > index.html << 'HTML_EOF'
     mouse). "Crisp" keeps the classic chunky pixels; "Smooth" blends them.
   </p>
 
+  <!-- Shown when the current WAD selection cannot start (see JavaScript). -->
+  <p id="setupwarn"></p>
+
   <p>
     <button id="startBtn" disabled>Start DOOM</button>
   </p>
@@ -1261,6 +1314,24 @@ const errbox        = document.getElementById('errbox');
 let doomModule = null;
 
 /* =========================================================================
+ * Engine console capture
+ * -------------------------------------------------------------------------
+ * Everything the engine prints (its startup log, and crucially its ERROR
+ * messages) is captured into a small ring buffer, as well as mirrored to
+ * the browser console. When something goes wrong, the last few lines are
+ * shown in the on-page error box, so the engine's own explanation (for
+ * example "You cannot -file with the shareware version") is visible without
+ * opening developer tools.
+ * ========================================================================= */
+
+const engineLog = [];
+
+function engineLogPush(text) {
+  engineLog.push(String(text));
+  if (engineLog.length > 40) engineLog.shift();   // keep only the tail
+}
+
+/* =========================================================================
  * Fatal error reporting
  * -------------------------------------------------------------------------
  * If the engine fails to start, show a readable message on the page instead
@@ -1270,15 +1341,24 @@ let doomModule = null;
 
 function showFatalError(err) {
   // Prefer the error's own message; fall back to stringifying whatever we got.
-  const msg = (err && err.message) ? err.message : String(err);
+  let msg = (err && err.message) ? err.message : String(err);
+
+  // The engine's own last words usually explain the failure far better than
+  // a JavaScript exception does, so show them front and center.
+  const tail = engineLog.filter(function (l) { return l && l.trim(); }).slice(-6);
+  if (tail.length > 0) {
+    msg += '\n\nEngine output:\n' + tail.join('\n');
+  }
+
   errbox.textContent =
     'DOOM failed to start.\n\n' +
     msg + '\n\n' +
-    'If the browser console mentions TextDecoder, a resizable ArrayBuffer,\n' +
-    'or an unsafe attempt to load a file:// URL, the engine was built with\n' +
-    'an incompatible toolchain. Update this repo, re-run ./install.sh (it\n' +
-    'pins a known-good toolchain and rebuilds cleanly), then reload this\n' +
-    'page with a hard refresh (Ctrl+Shift+R).\n\n' +
+    'If the engine output above names the problem (for example a WAD it\n' +
+    'refuses to load), fix that and reload the page. If instead the console\n' +
+    'mentions TextDecoder, a resizable ArrayBuffer, or an unsafe attempt to\n' +
+    'load a file:// URL, the engine was built with an incompatible\n' +
+    'toolchain: update this repo, re-run ./install.sh, then reload with a\n' +
+    'hard refresh (Ctrl+Shift+R).\n\n' +
     'This page build: ' + BUILD_INFO;
   errbox.style.display = 'block';
   console.error('DOOM failed to start:', err);
@@ -1287,6 +1367,63 @@ function showFatalError(err) {
 /* =========================================================================
  * WAD file picker
  * ========================================================================= */
+
+// Read just enough of a WAD to list its lump names. A WAD starts with a
+// 12-byte header (4-byte magic, lump count, directory offset); the
+// directory holds one 16-byte entry per lump with an 8-byte name. This is
+// how every Doom engine identifies what a WAD contains.
+function wadLumpNames(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+  if (magic !== 'IWAD' && magic !== 'PWAD') return null;
+  const numLumps = dv.getInt32(4, true);
+  const dirOfs = dv.getInt32(8, true);
+  const names = new Set();
+  for (let i = 0; i < numLumps; i++) {
+    const entry = dirOfs + i * 16;
+    if (entry + 16 > bytes.length) break;   // truncated file: stop safely
+    let name = '';
+    for (let j = 0; j < 8; j++) {
+      const c = bytes[entry + 8 + j];
+      if (c === 0) break;
+      name += String.fromCharCode(c);
+    }
+    names.add(name.toUpperCase());
+  }
+  return names;
+}
+
+// The shareware doom1.wad contains episode 1 only. Registered, retail,
+// Freedoom, and Doom 2 style IWADs all contain E2M1 or MAP01. This mirrors
+// how the engine itself detects shareware.
+function looksLikeSharewareIwad(bytes) {
+  const names = wadLumpNames(bytes);
+  if (!names) return false;   // unreadable: let the engine decide
+  return names.has('E1M1') && !names.has('E2M1') && !names.has('MAP01');
+}
+
+// Tracks whether the chosen main WAD is the shareware version, because the
+// engine refuses to load PWADs on top of shareware (by design, since 1993).
+let wadIsShareware = false;
+
+// Show or clear the setup-screen warning about shareware + PWADs. Returns
+// true when the current selection cannot start.
+function updateSetupWarning() {
+  const warnEl = document.getElementById('setupwarn');
+  const anyPwads = pwadData.some(function (p) { return p; });
+  if (wadIsShareware && anyPwads) {
+    warnEl.textContent =
+      'The selected main WAD is the shareware doom1.wad, and the engine ' +
+      'refuses add-on files with it (a vanilla rule, not a bug). Pick a ' +
+      'full IWAD (registered, retail, or Freedoom) or clear the PWAD ' +
+      'selection.';
+    warnEl.style.display = 'block';
+    return true;
+  }
+  warnEl.style.display = 'none';
+  return false;
+}
 
 // When the user picks a file, read it into memory and enable the Start button.
 document.getElementById('wadfile').addEventListener('change', function (e) {
@@ -1297,6 +1434,8 @@ document.getElementById('wadfile').addEventListener('change', function (e) {
     // Uint8Array is a plain array of bytes, which is what the engine's virtual
     // filesystem expects.
     wadData = new Uint8Array(ev.target.result);
+    wadIsShareware = looksLikeSharewareIwad(wadData);
+    updateSetupWarning();
     startBtn.disabled = false;
   };
   reader.readAsArrayBuffer(file);
@@ -1320,9 +1459,11 @@ document.getElementById('pwadfiles').addEventListener('change', function (e) {
         name: 'pwad_' + index + '.wad',
         bytes: new Uint8Array(ev.target.result),
       };
+      updateSetupWarning();
     };
     reader.readAsArrayBuffer(file);
   });
+  updateSetupWarning();
 });
 
 /* =========================================================================
@@ -1668,6 +1809,12 @@ sizeObserver.observe(canvas, { attributes: true, attributeFilter: ['width', 'hei
  * ========================================================================= */
 
 startBtn.addEventListener('click', function () {
+  // Refuse combinations the engine itself would refuse, BEFORE tearing down
+  // the setup screen, so the explanation is readable and nothing half-starts.
+  if (updateSetupWarning()) {
+    return;
+  }
+
   // Lock in the key bindings the user chose.
   installKeyRemap(buildRemapTable());
 
@@ -1685,8 +1832,15 @@ startBtn.addEventListener('click', function () {
   setFilter(filterHud.value);
 
   // Boot the WASM engine. noInitialRun keeps main() from firing until we call
-  // it, so we can write the WAD into the virtual filesystem first.
-  DoomModule({ canvas: canvas, noInitialRun: true }).then(function (Module) {
+  // it, so we can write the WAD into the virtual filesystem first. print and
+  // printErr capture the engine's console output (see engineLogPush) while
+  // still mirroring it to the browser console.
+  DoomModule({
+    canvas: canvas,
+    noInitialRun: true,
+    print: function (text) { engineLogPush(text); console.log(text); },
+    printErr: function (text) { engineLogPush(text); console.warn(text); },
+  }).then(function (Module) {
     // Put the chosen WAD where the engine will look for it.
     Module.FS.writeFile('/doom1.wad', wadData);
 
@@ -1727,6 +1881,18 @@ startBtn.addEventListener('click', function () {
       const isUnwind = (err === 'unwind') || (err && err.message === 'unwind');
       if (!isUnwind) showFatalError(err);
     }
+
+    // Watchdog: an engine error (I_Error) exits CLEANLY, without throwing
+    // anything this page could catch, which would leave a silent black
+    // screen. If the engine has not rendered a single frame shortly after
+    // starting, surface its own output so the reason is readable.
+    setTimeout(function () {
+      if (errbox.style.display !== 'block'
+          && doomModule
+          && doomModule._DG_EM_GetFrameCount() === 0) {
+        showFatalError(new Error('The engine stopped before rendering its first frame.'));
+      }
+    }, 3000);
 
     // Now that the engine has set the real buffer size, fit to the window.
     applyScaling();
