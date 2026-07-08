@@ -304,7 +304,17 @@ Merging total conversions is possible because the build also restores the
 engine's `-merge` support (see "What is patched in the engine source"),
 which folds a PWAD's sprites and flats into the IWAD the way the classic
 deutex tool did. This is what lets Chex Quest and Harmony look right rather
-than showing Doom or Freedoom graphics.
+than showing Doom or Freedoom graphics. The same loader is available for
+your own files: tick "load as total conversion" next to the PWAD picker.
+
+Two famous total conversions are linked from the setup screen as reading
+material but deliberately NOT offered as downloads: Aliens TC (1994) and
+Batman Doom (1999, ACE Team). Both run on this engine class, but both are
+based on film and comics properties, so their licensing is murkier than the
+officially freeware pack above. The page links their Doom Wiki articles so
+players can read up and decide for themselves; if obtained, they load
+through the PWAD picker with the total-conversion box ticked (Batman Doom
+also wants its .deh file).
 
 One format caveat that neither limit removal nor DeHackEd changes: this
 engine only understands VANILLA map behavior. Many modern community WADs
@@ -708,6 +718,18 @@ the crash and the game now runs.
     by default (its only remaining effect here was breaking quit), and the
     notifier cancels the browser main loop so a quit game stops ticking
     behind the setup screen.
+
+### Classic TC links and manual merge (round twelve)
+
+46. Added a "load as total conversion (merge)" toggle to the manual PWAD
+    picker, exposing the restored merge loader for any TC you supply
+    yourself (this is also the intended way to run the classic WolfenDoom
+    packs from the idgames archive).
+47. Added read-up links on the setup screen for Aliens TC (1994) and
+    Batman Doom (1999, ACE Team). Both run on this engine class, but both
+    are based on film and comics properties, so they are deliberately NOT
+    offered as downloads; the links go to their Doom Wiki articles so
+    players can research and decide for themselves.
 
 ## Performance notes
 

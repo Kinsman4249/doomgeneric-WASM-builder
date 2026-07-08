@@ -1297,14 +1297,19 @@ cat > index.html << 'HTML_EOF'
   </p>
   <p>
     <label>Optional PWADs (mods, maps): <input type="file" id="pwadfiles" accept=".wad" multiple></label>
+    &nbsp;
+    <label><input type="checkbox" id="mergePwads"> load as total conversion (merge)</label>
   </p>
   <p class="hint">
     PWADs load on top of the main WAD (the engine's <code>-file</code>
     option), in the order selected. They need a full IWAD: the shareware
     <code>doom1.wad</code> refuses add-on files by design. This engine uses
     the plain vanilla loader, so PWADs that replace sprites or floor
-    textures may not show those replacements. PWADs that carry a DEHACKED
-    lump have it applied automatically.
+    textures may not show those replacements. For total conversions that
+    replace sprites and flats, tick "load as total conversion": that uses
+    the engine's merge loader instead, which folds the graphics in
+    properly. PWADs that carry a DEHACKED lump have it applied
+    automatically either way.
   </p>
   <p>
     <label>Optional DeHackEd patches (.deh): <input type="file" id="dehfiles" accept=".deh,.bex" multiple></label>
@@ -1330,6 +1335,18 @@ cat > index.html << 'HTML_EOF'
   </p>
   <p id="freegames"></p>
   <p class="hint" id="freegamesStatus"></p>
+  <p class="hint">
+    Worth knowing about, deliberately NOT downloadable here: two of the most
+    famous total conversions ever made run on this engine class, and both
+    are based on film and comics properties, so their licensing is murkier
+    than the pack above. Read up and decide for yourself:
+    <a href="https://doomwiki.org/wiki/Aliens_TC" target="_blank" rel="noopener noreferrer">Aliens TC (1994)</a>
+    and
+    <a href="https://doomwiki.org/wiki/Batman_Doom" target="_blank" rel="noopener noreferrer">Batman Doom (1999, ACE Team)</a>.
+    If you obtain one, load its WAD through the PWAD picker above with
+    "load as total conversion" ticked (Aliens TC over a Doom 1 class IWAD,
+    Batman Doom over a Doom 2 class IWAD plus its .deh file).
+  </p>
 
   <h3>2. Controls</h3>
   <p class="hint">
@@ -2632,7 +2649,11 @@ function bootEngine() {
     // "-file a.wad b.wad" loads them on top of the IWAD, in order.
     const wadArgs = ['-iwad', '/' + iwadName];
     const loadedPwads = pwadData.filter(function (p) { return p; });
-    if (loadedPwads.length > 0) {
+    // Manually picked PWADs normally load with -file. With "load as total
+    // conversion" ticked they go through -merge instead, which folds their
+    // sprites and flats into the game properly (see the PWAD hint).
+    const manualAsMerge = document.getElementById('mergePwads').checked;
+    if (loadedPwads.length > 0 && !manualAsMerge) {
       wadArgs.push('-file');
       loadedPwads.forEach(function (p) {
         Module.FS.writeFile('/' + p.name, p.bytes);
@@ -2657,11 +2678,13 @@ function bootEngine() {
       wadArgs.push('-dehlump');
     }
 
-    // Total-conversion WADs from the free-games buttons: -merge folds their
-    // sprites and flats in properly (plain -file cannot on this engine).
-    if (mergeSpecs.length > 0) {
+    // Total-conversion WADs: from the free-games buttons, plus any manually
+    // picked PWADs when "load as total conversion" is ticked. -merge folds
+    // their sprites and flats in properly (plain -file cannot).
+    const allMerges = mergeSpecs.concat(manualAsMerge ? loadedPwads : []);
+    if (allMerges.length > 0) {
       wadArgs.push('-merge');
-      mergeSpecs.forEach(function (p) {
+      allMerges.forEach(function (p) {
         Module.FS.writeFile('/' + p.name, p.bytes);
         wadArgs.push('/' + p.name);
       });
