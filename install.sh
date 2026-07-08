@@ -918,12 +918,21 @@ patch -p1 < wasm-builder-engine.patch
 # other clones, re-copied on every run so the result is always consistent.
 CHOCO_TAG="chocolate-doom-2.2.1"
 CHOCO_DIR="$DOOMGENERIC_DIR/chocolate-deh-src"
-if [ ! -d "$CHOCO_DIR" ]; then
+
+# The cache is keyed on the release tag through a marker file. This matters:
+# the pinned tag changed once already (2.3.0 to 2.2.1, whose sources drop in
+# with zero adaptations), and a cache from before the change shipped the
+# wrong vintage and broke the build with a pointer-versus-struct error in
+# deh_io.c. A wrong or missing marker refreshes the clone.
+if [ ! -d "$CHOCO_DIR" ] \
+   || [ "$(cat "$CHOCO_DIR/.wasm-builder-tag" 2>/dev/null)" != "$CHOCO_TAG" ]; then
   log "Fetching the DeHackEd implementation (Chocolate Doom $CHOCO_TAG)..."
+  rm -rf "$CHOCO_DIR"
   git clone --quiet --depth 1 --branch "$CHOCO_TAG" \
     https://github.com/chocolate-doom/chocolate-doom.git "$CHOCO_DIR"
+  echo "$CHOCO_TAG" > "$CHOCO_DIR/.wasm-builder-tag"
 else
-  log "Chocolate Doom sources already fetched at $CHOCO_DIR."
+  log "Chocolate Doom sources already fetched at $CHOCO_DIR ($CHOCO_TAG)."
 fi
 
 log "Installing DeHackEd parser and WAD-merge sources into the engine..."
@@ -947,6 +956,15 @@ cd "$BUILD_DIR"
 # Sanity: the DeHackEd sources must be in place before the build.
 if [ ! -f deh_main.c ] || [ ! -f deh_defs.h ] || [ ! -f w_merge.c ]; then
   die "DeHackEd or WAD-merge sources missing after the copy step. Check the Chocolate Doom clone at $CHOCO_DIR."
+fi
+
+# Vintage guard: newer Chocolate releases use a pointer-style WAD directory
+# (lumpinfo[n]->name) that this engine's struct-style directory cannot
+# compile. If this fires, the cached clone is the wrong release; the marker
+# logic above should make that impossible, but a clear message beats a
+# compiler error.
+if grep -q 'lumpinfo\[lumpnum\]->name' deh_io.c; then
+  die "The fetched deh_io.c is from the wrong Chocolate Doom release. Delete $CHOCO_DIR and re-run this script."
 fi
 
 # ---------------------------------------------------------------------------

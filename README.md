@@ -741,6 +741,13 @@ the crash and the game now runs.
     explicitly permits distribution with the readme included, which the
     pack honors by installing the readme alongside. Verified: single PWAD,
     Doom II based, no DeHackEd needed, decodes intact from the pack.
+49. Fixed a stale-cache build break: machines that built during the brief
+    period when the restored sources were fetched from Chocolate Doom
+    2.3.0 kept that clone cached, and after the switch to 2.2.1 the old
+    cache shipped the wrong vintage (a pointer-versus-struct compile error
+    in deh_io.c). The cache is now keyed on the release tag and refreshes
+    itself, and a vintage guard turns any future drift into a clear
+    message instead of a compiler error.
 
 ## Performance notes
 
@@ -889,6 +896,14 @@ legally own, or the freely distributable shareware `doom1.wad`.
     (watch "game: N/35" in the FPS readout drop below 35 while the page
     stays responsive). If the readout sits at 35/35 and it still feels
     wrong, that is something else; open an issue with the map name.
+
+21. The build fails compiling `deh_io.c` with "member reference type
+    'lumpinfo_t' ... is not a pointer". A cached Chocolate Doom clone from
+    an older build is the wrong release. Pull the latest version of this
+    repo and re-run `./install.sh`: the cache now checks its own release
+    tag and refreshes itself. (Manual fix, equivalent: delete the
+    `chocolate-deh-src` folder inside your doomgeneric checkout and
+    re-run.)
 
 13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game
