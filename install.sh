@@ -3,7 +3,10 @@
 # install.sh - Build DOOM (doomgeneric) into a single-file, no-server,
 # browser-playable WebAssembly (WASM) build with:
 #   - a WAD file picker (load any WAD at runtime),
-#   - in-browser key remapping,
+#   - in-browser key remapping (WASD with A/D strafing by default),
+#   - full mouse look (pointer lock; vertical aim patched into the engine),
+#     with separate horizontal and vertical sensitivity, optional raw input
+#     (no mouse acceleration), and both mouse buttons firing,
 #   - display scaling that fills the browser window, with pixel-filtering
 #     presets ("Crisp" for the original chunky pixels, "Smooth" for a
 #     softened look), aspect-ratio choice, and a fullscreen button.
@@ -277,7 +280,7 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #   - a mouse bridge in the platform layer: the web page calls two exported
 #     functions (DG_EM_MouseMove / DG_EM_MouseButtons) and the bridge posts
 #     standard Doom mouse events to the engine (horizontal motion turns,
-#     button bit 0 fires, which the page maps to the RIGHT mouse button),
+#     button bit 0 fires, which the page maps to both mouse buttons),
 #   - vertical look, GZDoom style: mouse Y pitches the view using y-shearing
 #     (the same software-renderer trick Heretic and Hexen used), with the
 #     weapon sprite held steady on screen while the view shears,
@@ -821,9 +824,9 @@ cat > index.html << 'HTML_EOF'
   <h3>2. Controls</h3>
   <p class="hint">
     The mouse turns and looks up/down once you click the game to capture it
-    (Esc releases it). The <b>right mouse button shoots</b>. Keyboard
-    defaults: WASD movement with A/D strafing (the mouse covers turning),
-    F also shoots, E opens doors and presses switches.
+    (Esc releases it). <b>Both mouse buttons shoot.</b> Keyboard defaults:
+    WASD movement with A/D strafing (the mouse covers turning), F also
+    shoots, E opens doors and presses switches.
   </p>
   <div id="keybinds">
     <label>Move Forward: <input id="bind-up"     value="KeyW"></label>
@@ -861,8 +864,8 @@ cat > index.html << 'HTML_EOF'
   </p>
   <p>
     <label>
-      Mouse sensitivity:
-      <select id="sensMode">
+      Horizontal sensitivity:
+      <select id="sensXMode">
         <option value="0.5">Low</option>
         <option value="1" selected>Normal</option>
         <option value="1.5">High</option>
@@ -872,8 +875,31 @@ cat > index.html << 'HTML_EOF'
     </label>
     &nbsp;&nbsp;
     <label>
+      Vertical sensitivity:
+      <select id="sensYMode">
+        <option value="0.5">Low</option>
+        <option value="1" selected>Normal</option>
+        <option value="1.5">High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+      </select>
+    </label>
+  </p>
+  <p>
+    <label>
+      <input type="checkbox" id="rawInput" checked> Raw input (disable mouse acceleration)
+    </label>
+    &nbsp;&nbsp;
+    <label>
       <input type="checkbox" id="invertLook"> Invert mouse look
     </label>
+  </p>
+  <p class="hint">
+    Raw input asks the browser for unaccelerated mouse motion, so a flick of
+    the wrist moves the same amount no matter how fast you flick. Not every
+    browser supports it; if yours refuses, the game quietly falls back to
+    normal (accelerated) motion. Changing it takes effect the next time you
+    capture the mouse.
   </p>
   <p class="hint">
     You can change filter, aspect, and sensitivity at any time while playing
@@ -907,8 +933,17 @@ cat > index.html << 'HTML_EOF'
         <option value="square">Square</option>
       </select>
     </label>
-    <label>Sens:
-      <select id="sensModeHud">
+    <label>Sens X:
+      <select id="sensXModeHud">
+        <option value="0.5">Low</option>
+        <option value="1">Normal</option>
+        <option value="1.5">High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+      </select>
+    </label>
+    <label>Sens Y:
+      <select id="sensYModeHud">
         <option value="0.5">Low</option>
         <option value="1">Normal</option>
         <option value="1.5">High</option>
@@ -920,7 +955,7 @@ cat > index.html << 'HTML_EOF'
   </div>
 
   <!-- Shown while the game runs without the mouse captured. -->
-  <div id="mousehint">Click the game to capture the mouse. Mouse looks around, right button shoots, Esc releases the mouse.</div>
+  <div id="mousehint">Click the game to capture the mouse. Mouse looks around, mouse buttons shoot, Esc releases the mouse.</div>
 
   <!-- The game canvas. tabindex="-1" lets us focus it from code. -->
   <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
@@ -1006,8 +1041,11 @@ const filterSetup   = document.getElementById('filterMode');
 const aspectSetup   = document.getElementById('aspectMode');
 const filterHud     = document.getElementById('filterModeHud');
 const aspectHud     = document.getElementById('aspectModeHud');
-const sensSetup     = document.getElementById('sensMode');
-const sensHud       = document.getElementById('sensModeHud');
+const sensXSetup    = document.getElementById('sensXMode');
+const sensXHud      = document.getElementById('sensXModeHud');
+const sensYSetup    = document.getElementById('sensYMode');
+const sensYHud      = document.getElementById('sensYModeHud');
+const rawInput      = document.getElementById('rawInput');
 const invertLook    = document.getElementById('invertLook');
 const mousehint     = document.getElementById('mousehint');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
@@ -1157,7 +1195,7 @@ function installKeyRemap(remapTable) {
   canvas.addEventListener('mousedown', function () {
     canvas.focus();
     if (gameStarted && document.pointerLockElement !== canvas) {
-      canvas.requestPointerLock();
+      captureMouse();
     }
   });
 }
@@ -1167,8 +1205,9 @@ function installKeyRemap(remapTable) {
  * -------------------------------------------------------------------------
  * Clicking the game "captures" the mouse using the browser's pointer lock,
  * the same mechanism every browser FPS uses. While captured:
- *   - moving the mouse turns the view and looks up and down,
- *   - the RIGHT mouse button shoots,
+ *   - moving the mouse turns the view and looks up and down, with separate
+ *     horizontal and vertical sensitivity,
+ *   - both mouse buttons shoot,
  *   - Esc releases the mouse (a browser rule that pages cannot override;
  *     handily, Esc also opens Doom's own menu).
  * The motion and button state are handed to two small functions compiled
@@ -1191,12 +1230,38 @@ function updateMouseHint() {
   mousehint.style.display = (gameStarted && !pointerLocked()) ? 'block' : 'none';
 }
 
+// Capture the mouse. "Raw input" asks the browser for unaccelerated motion
+// (the pointer lock unadjustedMovement option), which is what disables OS
+// mouse acceleration. Not every browser supports it: newer ones return a
+// promise that rejects when refused, in which case we quietly fall back to
+// a plain capture so the game stays playable (just with acceleration).
+// Older browsers return nothing and ignore the option, which is the same
+// graceful fallback by accident.
+function captureMouse() {
+  const wantRaw = rawInput.checked;
+  let request;
+  try {
+    request = canvas.requestPointerLock(wantRaw ? { unadjustedMovement: true } : undefined);
+  } catch (err) {
+    // A very old API that dislikes the options argument: capture plainly.
+    request = canvas.requestPointerLock();
+  }
+  if (wantRaw && request && typeof request.catch === 'function') {
+    request.catch(function () {
+      console.log('Raw input (unadjustedMovement) not supported here; capturing with acceleration.');
+      canvas.requestPointerLock();
+    });
+  }
+}
+
 // Translate held browser buttons into the engine's mouse-button bitfield.
-// The engine treats bit 0 as Fire, and per this project's design the RIGHT
-// mouse button is the shoot button. The left button is deliberately not
-// mapped to anything: it is the "capture the mouse" click.
+// The engine treats bit 0 as Fire; both the left and the right mouse button
+// shoot. (The first click on an uncaptured game only captures the mouse:
+// buttons are not forwarded until capture is active, so that click never
+// fires a shot.)
 function engineButtonBits(e) {
   let bits = 0;
+  if (e.buttons & 1) bits |= 1;   // left button held  -> engine Fire bit
   if (e.buttons & 2) bits |= 1;   // right button held -> engine Fire bit
   return bits;
 }
@@ -1204,9 +1269,11 @@ function engineButtonBits(e) {
 document.addEventListener('mousemove', function (e) {
   if (!gameStarted || !doomModule || !pointerLocked()) return;
 
-  const sens = parseFloat(sensHud.value) || 1;
-  mouseAccX += e.movementX * sens;
-  mouseAccY += e.movementY * sens * (invertLook.checked ? -1 : 1);
+  // Separate sensitivities per axis: X scales turning, Y scales looking.
+  const sensX = parseFloat(sensXHud.value) || 1;
+  const sensY = parseFloat(sensYHud.value) || 1;
+  mouseAccX += e.movementX * sensX;
+  mouseAccY += e.movementY * sensY * (invertLook.checked ? -1 : 1);
 
   // Send whole pixels to the engine, keep the fractional remainder.
   const dx = Math.trunc(mouseAccX);
@@ -1306,8 +1373,9 @@ function wireControl(setupEl, hudEl, onChange) {
 wireControl(filterSetup, filterHud, function () { setFilter(filterHud.value); });
 wireControl(aspectSetup, aspectHud, function () { applyScaling(); });
 // Sensitivity needs no immediate action: the mousemove handler reads the
-// current value live on every mouse movement.
-wireControl(sensSetup, sensHud, function () {});
+// current values live on every mouse movement.
+wireControl(sensXSetup, sensXHud, function () {});
+wireControl(sensYSetup, sensYHud, function () {});
 
 // Fullscreen toggle. We fullscreen the whole stage (not just the canvas) so the
 // black letterbox background covers the screen too.
@@ -1345,7 +1413,8 @@ startBtn.addEventListener('click', function () {
   // Copy the setup-screen display choices into the in-game HUD controls.
   filterHud.value = filterSetup.value;
   aspectHud.value = aspectSetup.value;
-  sensHud.value   = sensSetup.value;
+  sensXHud.value  = sensXSetup.value;
+  sensYHud.value  = sensYSetup.value;
 
   // Swap from the setup screen to the game stage.
   document.getElementById('setup').style.display = 'none';

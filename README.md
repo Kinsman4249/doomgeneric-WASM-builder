@@ -15,9 +15,11 @@ What you get:
    and you choose between "Crisp" (the classic chunky pixels) and "Smooth"
    (softened). You can switch presets live while playing.
 5. Full mouse look, GZDoom style. Click the game to capture the mouse: moving
-   it turns AND looks up and down, and the right mouse button shoots. This
-   goes beyond what the stock engine can do; the build script patches the
-   engine source to add it (see "What is patched in the engine source").
+   it turns AND looks up and down, and both mouse buttons shoot. Horizontal
+   and vertical sensitivity are separate, and raw input (no mouse
+   acceleration) is on by default. This goes beyond what the stock engine can
+   do; the build script patches the engine source to add it (see "What is
+   patched in the engine source").
 6. An interactive resolution menu when you build, so you can pick how sharply
    the 3D world is rendered without editing anything.
 
@@ -118,15 +120,15 @@ window (see "Display" below).
    while playing.
 4. Click "Start DOOM".
 5. Click the game once to capture the mouse. From then on the mouse looks
-   around and the right mouse button shoots. Esc releases the mouse (and
-   opens Doom's menu).
+   around and both mouse buttons shoot. Esc releases the mouse (and opens
+   Doom's menu).
 
 ### Default controls
 
 Mouse (after clicking the game once to capture it):
 
 1. Move mouse: turn, and look up and down
-2. Right mouse button: shoot
+2. Left or right mouse button: shoot
 3. Esc: release the mouse (also opens Doom's menu)
 
 Keyboard defaults are WASD with strafing on A and D, since the mouse covers
@@ -163,9 +165,18 @@ releases the mouse; that is a browser rule no page can override, and it
 conveniently doubles as opening Doom's own menu. Click the game again to
 recapture.
 
-Sensitivity has five steps (Low to Very high) and can be changed on the setup
-screen or live from the bar at the top of the screen. "Invert mouse look" on
-the setup screen flips the vertical axis.
+Horizontal (turning) and vertical (looking) sensitivity are separate
+settings, each with five steps (Low to Very high). Both can be set on the
+setup screen or changed live from the bar at the top of the screen. "Invert
+mouse look" on the setup screen flips the vertical axis.
+
+"Raw input (disable mouse acceleration)" is on by default: it asks the
+browser for unaccelerated mouse motion (the pointer lock unadjustedMovement
+option), so a flick of the wrist moves the view the same amount no matter
+how fast the flick was. Most desktop browsers support it; if yours refuses,
+the game quietly falls back to normal accelerated motion and logs a note in
+the console. The setting takes effect the next time you capture the mouse,
+so if you toggle it mid-game, press Esc and click back in.
 
 Two honest limitations of bolting vertical look onto the 1993 renderer with
 y-shearing (the same technique Heretic and Hexen used): the view pitch is
@@ -187,7 +198,8 @@ over it). It offers:
 2. Aspect:
    - "4:3 (original look)" matches how Doom was shown on period monitors.
    - "Square pixels" displays the buffer without stretching.
-3. Sens: mouse sensitivity, five steps.
+3. Sens X and Sens Y: horizontal (turning) and vertical (looking) mouse
+   sensitivity, five steps each.
 4. Fullscreen: a button that toggles true fullscreen.
 
 You can also set all of these on the setup screen before you start. Changing
@@ -401,6 +413,17 @@ the crash and the game now runs.
     `EMSDK_DIR` was overridden from the environment. The script now keeps
     the value in a name the SDK does not manage.
 
+### Sensitivity, raw input, and left-click fire (same day, round two)
+
+20. Horizontal and vertical mouse sensitivity are now separate settings, on
+    the setup screen and the in-game bar.
+21. Raw input (no mouse acceleration) added and on by default, using the
+    pointer lock unadjustedMovement option, with a quiet fallback for
+    browsers that refuse it.
+22. The left mouse button now fires as well; the right button still fires.
+    The click that captures the mouse never fires a shot, because buttons
+    only reach the game while the mouse is captured.
+
 ## Legal note
 
 The doomgeneric engine source, and the underlying Doom engine, is GPL licensed
@@ -462,9 +485,9 @@ legally own, or the freely distributable shareware `doom1.wad`.
    view pitch is deliberately clamped to keep the effect reasonable.
 
 10. Fire keeps going after Esc. The page releases all mouse buttons when
-    capture ends, so this should not happen; if it does, click the game and
-    release the right button once, and please open an issue with your
-    browser name and version.
+    capture ends, so this should not happen; if it does, click the game,
+    press and release both mouse buttons once, and please open an issue
+    with your browser name and version.
 
 11. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game
