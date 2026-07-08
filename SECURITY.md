@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-This project is currently pre-1.0. Only the most recent release receives security fixes.
+Only the most recent release receives security fixes.
 
 - latest: supported (Yes)
 - older: not supported (No)

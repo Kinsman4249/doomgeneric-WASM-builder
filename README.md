@@ -129,6 +129,9 @@ window (see "Display" below).
 5. Click the game once to capture the mouse. From then on the mouse looks
    around and both mouse buttons shoot. Esc releases the mouse (and opens
    Doom's menu).
+6. Quitting from Doom's own menu (Options, Quit Game) returns to this setup
+   screen. Your WAD selections and settings stay as they were, and Start
+   boots a fresh game.
 
 ### Default controls
 
@@ -193,9 +196,10 @@ normal for this technique.
 
 ### Display: scaling and pixel filters
 
-The game canvas is scaled to fill the browser window. A small control bar sits
-at the top of the screen while you play (it fades in when you move the mouse
-over it). It offers:
+The game canvas is scaled to fill the browser window. A small control bar
+sits at the top of the screen while you play. It is nearly invisible during
+play so it never distracts; move the mouse over it and it comes back to full
+strength. It offers:
 
 1. Pixel filter:
    - "Crisp (original pixels)" uses nearest-neighbour scaling. This keeps the
@@ -364,46 +368,6 @@ context it was written against. After every build, the script verifies that
 the page-facing engine functions actually got exported and stops with a
 clear error if not.
 
-## About the Carmack notes and 3D acceleration
-
-John Carmack's notes from the 1997 Doom source release describe several
-things he would improve. Here is an honest accounting of where each stands
-in this project.
-
-1. "Replacing the line of sight test with a bsp line clip." Already done, in
-   the code itself. The released linuxdoom source this engine descends from
-   checks sight by clipping the sight line through the BSP tree: see
-   `P_CheckSight` in `p_sight.c`, which does a trivial rejection against the
-   REJECT table and then walks the tree with `P_CrossBSPNode` and
-   `P_CrossSubsector`. There is nothing left to apply from that note.
-
-2. The movement clipping half of the same note (`P_TryMove` and friends in
-   `p_map.c`, which use the blockmap) is still the original code, and this
-   project leaves it that way on purpose. Movement clipping IS the game
-   physics: changing it changes how the game plays, including quirks like
-   wallrunning that are part of Doom's identity and demo compatibility. At
-   this game's scale there is no performance problem to buy with that risk.
-
-3. "Collapsing walls, floors, and sprites into a single front-to-back walk
-   of the BSP tree." This is a ground-up renderer redesign, not a patch: it
-   means treating floors and ceilings as polygons, clipping sprite
-   billboards into subsector fragments, and rewriting the visibility logic
-   around all three. It is roughly what later engines did with years of
-   work. A patch-based builder like this one has no responsible way to ship
-   that, and at 640x400 in WebAssembly the payoff would be small: use the
-   FPS counter and you will see the renderer is not the bottleneck.
-
-4. "3D acceleration." True hardware rendering means replacing the software
-   renderer entirely with a GPU one (what GLDoom and GZDoom are). That is a
-   different engine, not a patch to this one. What this build already does
-   with the GPU: the finished frame is presented through SDL's accelerated
-   renderer (WebGL under Emscripten), and the browser scales the canvas to
-   your window on the compositor. In other words, the drawing of the 1993
-   frame is CPU (faithfully so, that is the point of doomgeneric), and
-   everything after that is GPU. If you want a hardware-rendered Doom,
-   GZDoom is the right tool; this project's goal is the original renderer,
-   running anywhere, with quality-of-life additions around it.
-
 ## Why the toolchain is pinned
 
 The script installs Emscripten SDK release 3.1.64, not "latest". A newer
@@ -452,7 +416,7 @@ EMSDK_VERSION=4.0.10 ./install.sh
 If a much newer SDK rejects the `TEXTDECODER` setting, remove that flag from
 the Makefile section of `install.sh` and rebuild.
 
-## Fix history
+## Change history
 
 Everything below landed on 2026-07-08. The startup crash fixes are confirmed
 working: rebuilding with the pinned toolchain on an affected machine resolved
@@ -546,10 +510,12 @@ the crash and the game now runs.
     the main WAD with the engine's `-file` option, in selection order. See
     "Loading PWADs (mods)" for the vanilla-engine caveats.
 25. The post-build verification now also checks the FPS counter export.
-26. Documented where the Carmack source-release notes stand in this
-    codebase, including that the BSP sight check they suggest is already
-    present in `p_sight.c`. See "About the Carmack notes and 3D
-    acceleration".
+26. Verified against the source that the BSP-based line-of-sight check from
+    the 1997 source-release notes is already present in this engine
+    (`P_CheckSight` in `p_sight.c` walks the BSP after a REJECT-table
+    check), so nothing needed changing there. Renderer restructuring and
+    GPU rendering were assessed and deliberately not attempted: both mean
+    replacing the 1993 renderer rather than patching it.
 
 ### Static limit removal (same day, round four)
 
@@ -606,6 +572,20 @@ the crash and the game now runs.
     ("game: N/35"), fed by a new engine export, so slow motion and render
     slowness are distinguishable at a glance.
 
+### Quit to menu and polish (round eight, v1.3.2)
+
+37. Quitting from Doom's own menu ("quit to DOS") now returns to the setup
+    screen instead of leaving a dead black canvas. The engine patch
+    registers a quit notifier in the engine's exit-function list (clean
+    quits only, never the error path) that calls a page hook; the page
+    resets, keeps the WAD selections and settings, and the next press of
+    Start boots a completely fresh engine instance.
+38. The in-game control bar is now nearly invisible during play (barely
+    there instead of half transparent); mouse over it, or focus a control
+    in it, and it comes back to full strength.
+39. Removed the essay about the 1997 source-release notes from this README;
+    the one finding that mattered is recorded in item 26.
+
 ## Performance notes
 
 What the build does for speed, and what to expect on heavy maps:
@@ -628,7 +608,8 @@ What the build does for speed, and what to expect on heavy maps:
    and a slow-motion dip when thousands wake at once; that is the 1993
    simulation loop meeting 10000 monsters, not a bug in the build. There
    is no further honest speedup available without changing how the game
-   itself works (see "About the Carmack notes and 3D acceleration").
+   itself simulates and renders, which this project deliberately does not
+   do: the point is the original engine, running anywhere.
 
 ## Legal note
 

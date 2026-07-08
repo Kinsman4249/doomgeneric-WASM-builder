@@ -297,6 +297,8 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #   - performance under overload: the tic catch-up loop is capped (an
 #     overloaded frame runs slow motion instead of freezing the tab)
 #     and the zone allocator default grows from 6 to 64 MiB,
+#   - a quit notifier: quitting from Doom's own menu calls a hook the
+#     page installs, so the page can return to its setup screen,
 #   - a game-tic counter export beside the frame counter, so the page
 #     can show game speed (tics per second) next to FPS,
 #   - a WebAssembly fix for the engine error path: vanilla registered a
@@ -360,18 +362,19 @@ index 9012e5f..5f6850f 100644
      // Generate the WAD hash table.  Speed things up a bit.
      W_GenerateHashTable();
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
-index 7076dd2..85d5a09 100644
+index 7076dd2..14d7054 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
 +++ b/doomgeneric/doomgeneric_emscripten.c
-@@ -3,6 +3,7 @@
+@@ -3,6 +3,8 @@
  #include "doomkeys.h"
  #include "m_argv.h"
  #include "doomgeneric.h"
 +#include "d_event.h"   // [WASM-builder] event_t / D_PostEvent for mouse input
++#include "i_system.h"  // [WASM-builder] I_AtExit for the quit notifier
  
  #include <stdio.h>
  #include <unistd.h>
-@@ -96,6 +97,15 @@ static unsigned char convertToDoomKey(unsigned int key)
+@@ -96,6 +98,15 @@ static unsigned char convertToDoomKey(unsigned int key)
      case SDLK_MINUS:
        key = KEY_MINUS;
        break;
@@ -387,7 +390,7 @@ index 7076dd2..85d5a09 100644
      default:
        key = tolower(key);
        break;
-@@ -139,6 +149,89 @@ static void handleKeyInput()
+@@ -139,8 +150,108 @@ static void handleKeyInput()
  }
  
  
@@ -474,10 +477,29 @@ index 7076dd2..85d5a09 100644
 +  return gametic;
 +}
 +
++// [WASM-builder] Runs when the player quits from Doom's own menu (the
++// engine calls its registered exit functions before stopping). EM_ASM
++// executes a snippet of JavaScript from C: here it calls a hook the page
++// installs, so the page can put its setup screen back.
++static void NotifyPageOfQuit(void)
++{
++  EM_ASM({
++    if (typeof window !== 'undefined' && window.wasmBuilderOnQuit) {
++      window.wasmBuilderOnQuit();
++    }
++  });
++}
++
  void DG_Init()
  {
++  // [WASM-builder] Fire the page's quit hook on clean quits only:
++  // run_on_error=false keeps this out of the engine-error path.
++  I_AtExit(NotifyPageOfQuit, false);
++
    window = SDL_CreateWindow("DOOM",
-@@ -167,7 +260,9 @@ void DG_DrawFrame()
+                             SDL_WINDOWPOS_UNDEFINED,
+                             SDL_WINDOWPOS_UNDEFINED,
+@@ -167,7 +278,9 @@ void DG_DrawFrame()
    SDL_RenderCopy(renderer, texture, NULL, NULL);
    SDL_RenderPresent(renderer);
  
@@ -1035,10 +1057,11 @@ cat > index.html << 'HTML_EOF'
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.6);
     font-size: 13px;
-    opacity: 0.5;             /* stays out of the way... */
+    opacity: 0.07;            /* nearly invisible during play... */
     transition: opacity 0.15s ease;
   }
-  #hud:hover { opacity: 1; }  /* ...until you move the mouse over it */
+  /* ...until the mouse is over it (or a control in it has focus). */
+  #hud:hover, #hud:focus-within { opacity: 1; }
   #hud label { display: inline-flex; align-items: center; gap: 5px; }
   #hud select, #hud button { font-family: monospace; font-size: 13px; }
 
@@ -1619,14 +1642,26 @@ const BASE_MANAGED_CODES = [
   'Minus', 'Equal',
 ];
 
+// The active bindings. Kept in outer variables (not captured in a closure)
+// so that starting the game again after a quit refreshes the bindings
+// without stacking duplicate event listeners.
+let activeRemapTable = null;
+let activeManagedCodes = null;
+let remapListenersInstalled = false;
+
 function installKeyRemap(remapTable) {
+  activeRemapTable = remapTable;
   // The full set of key codes we manage: the base list, plus every physical
   // key the user bound, plus every key Doom should receive.
-  const managedCodes = new Set([
+  activeManagedCodes = new Set([
     ...BASE_MANAGED_CODES,
     ...Object.keys(remapTable),
     ...Object.values(remapTable),
   ]);
+
+  // The listeners themselves are installed exactly once per page load.
+  if (remapListenersInstalled) return;
+  remapListenersInstalled = true;
 
   function remapEvent(e) {
     // Do nothing until the engine is running. THIS is the reliability fix:
@@ -1634,9 +1669,9 @@ function installKeyRemap(remapTable) {
     if (!gameStarted) return;
 
     // Ignore keys we do not manage, so normal typing elsewhere is unaffected.
-    if (!managedCodes.has(e.code)) return;
+    if (!activeManagedCodes.has(e.code)) return;
 
-    const mapped = remapTable[e.code];
+    const mapped = activeRemapTable[e.code];
 
     if (mapped && mapped !== e.code) {
       // This is a remapped key. Cancel the original and send Doom the
@@ -1924,6 +1959,10 @@ sizeObserver.observe(canvas, { attributes: true, attributeFilter: ['width', 'hei
  * Start the game
  * ========================================================================= */
 
+// Guard so the once-a-second FPS sampler is only ever started once, no
+// matter how many times the game is started and quit.
+let fpsTimerStarted = false;
+
 startBtn.addEventListener('click', function () {
   // Refuse combinations the engine itself would refuse, BEFORE tearing down
   // the setup screen, so the explanation is readable and nothing half-starts.
@@ -1931,7 +1970,8 @@ startBtn.addEventListener('click', function () {
     return;
   }
 
-  // Lock in the key bindings the user chose.
+  // Lock in the key bindings the user chose (re-read on every start, so
+  // changes made after a quit take effect).
   installKeyRemap(buildRemapTable());
 
   // Copy the setup-screen display choices into the in-game HUD controls.
@@ -1947,6 +1987,47 @@ startBtn.addEventListener('click', function () {
   // Apply the initial filter (default: crisp / original pixels).
   setFilter(filterHud.value);
 
+  bootEngine();
+});
+
+/* =========================================================================
+ * Booting (and rebooting) the engine
+ * -------------------------------------------------------------------------
+ * Each call creates a COMPLETELY FRESH engine instance; the factory the
+ * build exports supports that. This is what makes "quit to DOS, then Start
+ * again" work: the quit hook below resets the page, and the next Start
+ * boots a new engine while the WAD selections and settings stay as they
+ * were.
+ * ========================================================================= */
+
+// Called from inside the engine (see the engine patch) when the player
+// quits from Doom's own menu. Returns the page to the setup screen.
+window.wasmBuilderOnQuit = function () {
+  gameStarted = false;
+  doomModule = null;
+  engineLog.length = 0;
+  fpsLastTime = 0;
+  fpsLastFrames = 0;
+  fpsLastTics = 0;
+
+  // Release the mouse and leave fullscreen if the game held them.
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(function () {});
+  }
+
+  // Hide the stage overlays and bring the setup screen back.
+  errbox.style.display = 'none';
+  fpsbox.style.display = 'none';
+  mousehint.style.display = 'none';
+  stage.style.display = 'none';
+  document.getElementById('setup').style.display = 'block';
+  console.log('Engine quit; returned to the setup screen.');
+};
+
+function bootEngine() {
   // Boot the WASM engine. noInitialRun keeps main() from firing until we call
   // it, so we can write the WAD into the virtual filesystem first. print and
   // printErr capture the engine's console output (see engineLogPush) while
@@ -1980,9 +2061,13 @@ startBtn.addEventListener('click', function () {
     updateMouseHint();
 
     // FPS readout: visible if its HUD checkbox is ticked, sampled once a
-    // second from the engine's frame counter.
+    // second from the engine's counters. The sampler is global and started
+    // only once, even across quit-and-restart cycles.
     if (fpsToggle.checked) fpsbox.style.display = 'block';
-    setInterval(updateFps, 1000);
+    if (!fpsTimerStarted) {
+      fpsTimerStarted = true;
+      setInterval(updateFps, 1000);
+    }
 
     // Size the canvas once before we start (the MutationObserver will refine it
     // as soon as the engine sets its real buffer size during callMain).
@@ -2004,7 +2089,8 @@ startBtn.addEventListener('click', function () {
     // screen. If the engine has not rendered a single frame shortly after
     // starting, surface its own output so the reason is readable.
     setTimeout(function () {
-      if (errbox.style.display !== 'block'
+      if (gameStarted
+          && errbox.style.display !== 'block'
           && doomModule
           && doomModule._DG_EM_GetFrameCount() === 0) {
         showFatalError(new Error('The engine stopped before rendering its first frame.'));
@@ -2015,7 +2101,7 @@ startBtn.addEventListener('click', function () {
     applyScaling();
     canvas.focus();
   }).catch(showFatalError);   // any failure while booting the engine lands here
-});
+}
 </script>
 </body>
 </html>
