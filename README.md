@@ -214,6 +214,13 @@ a clean step, so the fix applies automatically. Then reload `index.html` with a
 hard refresh (Ctrl+Shift+R) so the browser does not reuse a cached copy of the
 old `doomgeneric.js`.
 
+Two extra safety nets ship with the page. The setup screen shows a "Build:"
+line with the SDK version and build time, so you can confirm at a glance that
+you are looking at a fresh page and not a cached one. And the page wraps the
+browser's TextDecoder so that text read from growable memory is copied first,
+which means even an engine build from an incompatible toolchain cannot crash
+on the error above.
+
 To experiment with a different SDK release anyway:
 
 ```bash
@@ -241,6 +248,13 @@ the Makefile section of `install.sh` and rebuild.
    some browsers. See "Why the toolchain is pinned".
 7. If the engine fails to start, the page now shows a readable error box with
    recovery steps instead of a silent black screen.
+8. The page wraps the browser's TextDecoder so that text read from growable
+   memory is copied into a fixed buffer first. This neutralizes the
+   "resizable ArrayBuffer" startup crash even if an engine build from an
+   incompatible toolchain slips through.
+9. The setup screen and the browser console show a build stamp (SDK version,
+   internal resolution, and build time), so a stale cached page or a
+   forgotten rebuild is easy to spot.
 
 ## Legal note
 
@@ -295,6 +309,17 @@ legally own, or the freely distributable shareware `doom1.wad`.
    `./install.sh` (it now pins a known-good toolchain and always rebuilds from
    a clean step), then hard refresh the page (Ctrl+Shift+R). See "Why the
    toolchain is pinned".
+
+   If you rebuilt and the error is still there, you are almost certainly
+   running the old files. Check three things:
+
+   - The setup screen should show a "Build:" line at the bottom with the
+     pinned SDK version and a fresh build time. No line at all means the page
+     is the old version. An old time means a stale cached page.
+   - Run `grep -c TextDecoder ~/doomgeneric/doomgeneric/doomgeneric.js`
+     in the container. A fresh pinned build prints `0`.
+   - Close the game's browser tab completely and open `index.html` again. A
+     plain reload can serve a cached copy on `file://` pages.
 
 8. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as unique
    security origins` in the console. Same cause and same fix as the previous

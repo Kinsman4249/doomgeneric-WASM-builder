@@ -514,6 +514,11 @@ cat > index.html << 'HTML_EOF'
   <p>
     <button id="startBtn" disabled>Start DOOM</button>
   </p>
+
+  <!-- Filled from JavaScript with the build stamp injected by install.sh.
+       If this line is missing or shows an old date, the browser is showing
+       a stale or cached copy of the page. -->
+  <p class="hint" id="buildinfo"></p>
 </div>
 
 <!-- ==================== GAME STAGE ==================== -->
@@ -542,11 +547,60 @@ cat > index.html << 'HTML_EOF'
   <div id="errbox"></div>
 </div>
 
+<script>
+/*
+ * Compatibility shim, and it must run BEFORE the engine script below.
+ *
+ * Some engine builds ask the browser's TextDecoder to read text straight out
+ * of the game's memory. When that memory is allowed to grow, some browsers
+ * refuse with:
+ *   TypeError: Failed to execute 'decode' on 'TextDecoder':
+ *   The provided ArrayBuffer value must not be resizable
+ * (Seen in the wild here: simply writing the WAD into the virtual filesystem
+ * does a routine "does this file exist yet?" check, and building that check's
+ * error message decodes a string from growable memory, killing startup.)
+ *
+ * The fix is simple: hand TextDecoder a COPY of the bytes instead, because a
+ * copy lives in a plain fixed-size buffer. This wrapper does that
+ * automatically, only when actually needed, and changes nothing otherwise.
+ */
+(function () {
+  if (typeof TextDecoder === 'undefined') return; // very old browser, nothing to do
+  var originalDecode = TextDecoder.prototype.decode;
+  TextDecoder.prototype.decode = function (input, options) {
+    if (input && ArrayBuffer.isView(input)) {
+      var buf = input.buffer;
+      // "resizable" (ArrayBuffer) and "growable" (SharedArrayBuffer) are true
+      // when the underlying memory can change size, which is exactly what
+      // decode() rejects. slice() copies the bytes into a fresh fixed buffer.
+      if (buf && (buf.resizable === true || buf.growable === true)) {
+        input = input.slice();
+      }
+    }
+    return originalDecode.call(this, input, options);
+  };
+})();
+</script>
+
 <!-- The compiled engine. Defines the global DoomModule(...) factory. -->
 <script src="doomgeneric.js"></script>
 
 <script>
 "use strict";
+
+/* =========================================================================
+ * Build stamp
+ * -------------------------------------------------------------------------
+ * install.sh replaces the placeholder below with the SDK version, internal
+ * resolution, and build time when it writes this file. It is shown on the
+ * setup screen and logged to the console, so "which build am I actually
+ * running?" is always answerable at a glance. Browsers can cache file://
+ * pages surprisingly hard, and a stale page looks identical to a fresh one.
+ * ========================================================================= */
+
+const BUILD_INFO = '__BUILD_INFO__';
+console.log('DOOM page build: ' + BUILD_INFO);
+document.getElementById('buildinfo').textContent = 'Build: ' + BUILD_INFO;
 
 /* =========================================================================
  * State
@@ -591,7 +645,8 @@ function showFatalError(err) {
     'or an unsafe attempt to load a file:// URL, the engine was built with\n' +
     'an incompatible toolchain. Update this repo, re-run ./install.sh (it\n' +
     'pins a known-good toolchain and rebuilds cleanly), then reload this\n' +
-    'page with a hard refresh (Ctrl+Shift+R).';
+    'page with a hard refresh (Ctrl+Shift+R).\n\n' +
+    'This page build: ' + BUILD_INFO;
   errbox.style.display = 'block';
   console.error('DOOM failed to start:', err);
 }
@@ -851,6 +906,14 @@ startBtn.addEventListener('click', function () {
 </html>
 HTML_EOF
 
+# Stamp the page with build info. The heredoc above is quoted ('HTML_EOF'), so
+# variables are NOT expanded inside it; we substitute the placeholder here
+# instead. The stamp shows on the setup screen and in the browser console,
+# which makes stale-cache and forgot-to-rebuild problems obvious at a glance.
+BUILD_STAMP="emsdk ${EMSDK_VERSION}, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
+sed -i "s|__BUILD_INFO__|${BUILD_STAMP}|" index.html
+log "Stamped index.html: ${BUILD_STAMP}"
+
 # ---------------------------------------------------------------------------
 # 6. Build
 # ---------------------------------------------------------------------------
@@ -866,6 +929,18 @@ emmake make -f Makefile.emscripten \
 # Sanity check: the linker should have produced doomgeneric.js.
 if [ ! -f "$BUILD_DIR/doomgeneric.js" ]; then
   die "Build finished but doomgeneric.js was not produced. Check the make output above."
+fi
+
+# Verify the TEXTDECODER=0 setting actually took effect: the engine output
+# should not reference TextDecoder at all. If it does, the toolchain ignored
+# the setting. The page's shim keeps that from crashing the game, but it is
+# unexpected with the pinned toolchain, so say something.
+if grep -q "TextDecoder" "$BUILD_DIR/doomgeneric.js"; then
+  warn "doomgeneric.js still references TextDecoder. The page ships a shim that"
+  warn "keeps this from crashing, but this is unexpected with the pinned"
+  warn "toolchain. See the README troubleshooting section."
+else
+  log "Verified: doomgeneric.js contains no TextDecoder usage (as intended)."
 fi
 
 log "Build complete."
