@@ -139,7 +139,8 @@ window (see "Display" below).
    Doom's menu).
 6. Quitting from Doom's own menu (Options, Quit Game) returns to this setup
    screen. Your WAD selections and settings stay as they were, and Start
-   boots a fresh game.
+   boots a fresh game. The short pause with a sound right after confirming
+   the quit is Doom's classic quit jingle, not a hang.
 
 ### Default controls
 
@@ -693,6 +694,20 @@ the crash and the game now runs.
     Chex Quest 3 is intentionally excluded as a ZDoom-only game.
 44. Mouse sensitivity now has seven steps per axis (Extra low to Extra
     high), and the defaults changed to Sens X High, Sens Y Low.
+
+### Quit to menu, actually (round eleven)
+
+45. Fixed quit-to-menu, which round eight shipped but which never fired in
+    practice. Three engine facts conspired: this platform's I_Quit RETURNS
+    instead of exiting; exit functions run in reverse registration order,
+    so the page notifier (registered first, at init) ran last; and the
+    ENDOOM farewell-screen path, whose display is stubbed on this platform,
+    still called exit() midway through the chain, killing everything after
+    it, including the notifier. Fixes: the notifier now registers on the
+    first rendered frame (last registered, so it runs first), ENDOOM is off
+    by default (its only remaining effect here was breaking quit), and the
+    notifier cancels the browser main loop so a quit game stops ticking
+    behind the setup screen.
 
 ## Performance notes
 

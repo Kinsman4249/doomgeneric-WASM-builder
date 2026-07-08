@@ -335,10 +335,23 @@ index 1939dbd..0f3125c 100644
  
      while (!PlayersInGame() || lowtic < gametic/ticdup + counts)
 diff --git a/doomgeneric/d_main.c b/doomgeneric/d_main.c
-index 9012e5f..86711fd 100644
+index 9012e5f..cd8efc6 100644
 --- a/doomgeneric/d_main.c
 +++ b/doomgeneric/d_main.c
-@@ -1085,7 +1085,7 @@ static void D_Endoom(void)
+@@ -125,7 +125,11 @@ boolean         main_loop_started = false;
+ char		wadfile[1024];		// primary wad file
+ char		mapdir[1024];           // directory of development maps
+ 
+-int             show_endoom = 1;
++// [WASM-builder] ENDOOM (the DOS text farewell screen) is stubbed on
++// this platform, and its code path exited early during quit, cutting
++// the quit sequence short before the page could be notified. Default
++// off; the config option remains but does nothing useful in a browser.
++int             show_endoom = 0;
+ 
+ 
+ void D_ConnectNetGame(void);
+@@ -1085,7 +1089,7 @@ static void D_Endoom(void)
  	exit(0);
  }
  
@@ -347,7 +360,7 @@ index 9012e5f..86711fd 100644
  // Load dehacked patches needed for certain IWADs.
  static void LoadIwadDeh(void)
  {
-@@ -1157,6 +1157,18 @@ static void LoadIwadDeh(void)
+@@ -1157,6 +1161,18 @@ static void LoadIwadDeh(void)
  }
  #endif
  
@@ -366,7 +379,7 @@ index 9012e5f..86711fd 100644
  //
  // D_DoomMain
  //
-@@ -1165,7 +1177,7 @@ void D_DoomMain (void)
+@@ -1165,7 +1181,7 @@ void D_DoomMain (void)
      int p;
      char file[256];
      char demolumpname[9];
@@ -375,7 +388,7 @@ index 9012e5f..86711fd 100644
      int numiwadlumps;
  #endif
  
-@@ -1377,7 +1389,7 @@ void D_DoomMain (void)
+@@ -1377,7 +1393,7 @@ void D_DoomMain (void)
  
      DEH_printf("W_Init: Init WADfiles.\n");
      D_AddFile(iwadfile);
@@ -384,7 +397,7 @@ index 9012e5f..86711fd 100644
      numiwadlumps = numlumps;
  #endif
  
-@@ -1388,7 +1400,7 @@ void D_DoomMain (void)
+@@ -1388,7 +1404,7 @@ void D_DoomMain (void)
      D_IdentifyVersion();
      InitGameVersion();
  
@@ -393,7 +406,7 @@ index 9012e5f..86711fd 100644
      //!
      // @category mod
      //
-@@ -1510,7 +1522,10 @@ void D_DoomMain (void)
+@@ -1510,7 +1526,10 @@ void D_DoomMain (void)
          printf("Playing demo %s.\n", file);
      }
  
@@ -428,7 +441,7 @@ index dff6936..2a31f6f 100644
  // Enables multiplayer support (network games)
  
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
-index 7076dd2..14d7054 100644
+index 7076dd2..5eff33a 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
 +++ b/doomgeneric/doomgeneric_emscripten.c
 @@ -3,6 +3,8 @@
@@ -456,7 +469,7 @@ index 7076dd2..14d7054 100644
      default:
        key = tolower(key);
        break;
-@@ -139,8 +150,108 @@ static void handleKeyInput()
+@@ -139,6 +150,109 @@ static void handleKeyInput()
  }
  
  
@@ -546,7 +559,12 @@ index 7076dd2..14d7054 100644
 +// [WASM-builder] Runs when the player quits from Doom's own menu (the
 +// engine calls its registered exit functions before stopping). EM_ASM
 +// executes a snippet of JavaScript from C: here it calls a hook the page
-+// installs, so the page can put its setup screen back.
++// installs, so the page can put its setup screen back. Afterwards the
++// browser main loop is cancelled, because this platform's I_Quit RETURNS
++// instead of exiting the process; without the cancel, a quit game would
++// keep ticking invisibly behind the setup screen.
++static int s_QuitHookRegistered = 0;
++
 +static void NotifyPageOfQuit(void)
 +{
 +  EM_ASM({
@@ -554,21 +572,25 @@ index 7076dd2..14d7054 100644
 +      window.wasmBuilderOnQuit();
 +    }
 +  });
++
++  emscripten_cancel_main_loop();
 +}
 +
  void DG_Init()
  {
-+  // [WASM-builder] Fire the page's quit hook on clean quits only:
-+  // run_on_error=false keeps this out of the engine-error path.
-+  I_AtExit(NotifyPageOfQuit, false);
-+
    window = SDL_CreateWindow("DOOM",
-                             SDL_WINDOWPOS_UNDEFINED,
-                             SDL_WINDOWPOS_UNDEFINED,
-@@ -167,7 +278,9 @@ void DG_DrawFrame()
+@@ -167,7 +281,17 @@ void DG_DrawFrame()
    SDL_RenderCopy(renderer, texture, NULL, NULL);
    SDL_RenderPresent(renderer);
  
++  if (!s_QuitHookRegistered)
++  {
++    // [WASM-builder] Registered here (first frame) rather than at init so
++    // it runs FIRST among the exit functions on quit; see NotifyPageOfQuit.
++    s_QuitHookRegistered = 1;
++    I_AtExit(NotifyPageOfQuit, false);
++  }
++
 +  s_FrameCount++;       // [WASM-builder] one more rendered frame (FPS counter)
    handleKeyInput();
 +  flushMouseEvents();   // [WASM-builder] deliver this frame's mouse input
