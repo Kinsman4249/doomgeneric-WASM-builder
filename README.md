@@ -14,6 +14,12 @@ What you get:
 4. Window scaling with pixel-filter presets. The game fills the browser window,
    and you choose between "Crisp" (the classic chunky pixels) and "Smooth"
    (softened). You can switch presets live while playing.
+5. Full mouse look, GZDoom style. Click the game to capture the mouse: moving
+   it turns AND looks up and down, and the right mouse button shoots. This
+   goes beyond what the stock engine can do; the build script patches the
+   engine source to add it (see "What is patched in the engine source").
+6. An interactive resolution menu when you build, so you can pick how sharply
+   the 3D world is rendered without editing anything.
 
 ## How the build is organized
 
@@ -51,73 +57,121 @@ chmod +x install.sh
 The script is idempotent, which means it is safe to re-run. Each step checks
 whether its work is already done before doing it again. In order, it will:
 
-1. Install required packages (`git make cmake python3 gcc gcc-c++ patch`) if
+1. Ask which internal render resolution to build (see "Choosing the internal
+   render resolution" below). Setting `DOOM_RESX` and `DOOM_RESY` skips the
+   question.
+2. Install required packages (`git make cmake python3 gcc gcc-c++ patch`) if
    any are missing.
-2. Clone the Emscripten SDK into `~/emsdk` if not already present, then
+3. Clone the Emscripten SDK into `~/emsdk` if not already present, then
    install and activate a pinned, known-good release of it (see "Why the
    toolchain is pinned" below).
-3. Add the emsdk environment to `~/.bashrc` and `~/.bash_profile` so that
+4. Add the emsdk environment to `~/.bashrc` and `~/.bash_profile` so that
    `emcc` is available in future shells without any manual step.
-4. Clone `doomgeneric` into `~/doomgeneric` if not already present.
-5. Write a patched `Makefile.emscripten` (see "What is patched" below).
-6. Write `index.html` (the WAD picker, key remap UI, and display controls).
-7. Build. The output is `~/doomgeneric/doomgeneric/doomgeneric.js` and
-   `index.html`.
+5. Clone `doomgeneric` into `~/doomgeneric` if not already present, reset it
+   to a pinned commit, and apply the mouse-look engine patches (see "What is
+   patched in the engine source" below).
+6. Write a patched `Makefile.emscripten` (see "What is patched" below).
+7. Write `index.html` (the WAD picker, controls UI, and display controls).
+8. Build and verify. The output is `~/doomgeneric/doomgeneric/doomgeneric.js`
+   and `index.html`.
 
 When it finishes, open `~/doomgeneric/doomgeneric/index.html` directly in a
 browser. If the container shares your home directory with the host (the
 Distrobox default), that same path exists on your host too, so you can open it
 from your host file manager or browser.
 
-### Optional: raise the internal render resolution
+### Choosing the internal render resolution
 
 Doom renders the game world into a fixed size pixel buffer that is chosen at
-build time. The default is 640x400, the classic doomgeneric resolution. You can
-build at a higher internal resolution for crisper geometry by setting two
-environment variables before running the script:
+build time. When you run the script in a terminal it shows a small menu:
+
+```text
+  1) 640 x 400    classic doomgeneric look (default)
+  2) 960 x 600    sharper, still safe
+  3) 1280 x 800   much sharper, small crash risk on very complex maps
+  4) custom
+```
+
+Pressing Enter takes the classic default. To skip the menu entirely (or when
+running the script from something that is not a terminal), set both
+environment variables:
 
 ```bash
 DOOM_RESX=960 DOOM_RESY=600 ./install.sh
 ```
 
-Keep the shape close to 8:5 (the same shape as 640x400) for the fewest
-surprises. Be careful going high: the original Doom software renderer has hard
-internal limits, and very high resolutions can overflow them on detailed maps
-and crash the game. Modest values such as 960x600 or 1280x800 are usually fine.
-If you hit crashes, rebuild at a lower resolution. This internal resolution is
-separate from how large the game looks on screen, which the page handles by
-scaling the buffer to your window (see "Display" below).
+For custom values, keep the shape close to 8:5 (the same shape as 640x400)
+for the fewest surprises. Be careful going high: the original Doom software
+renderer has hard internal limits, and very high resolutions can overflow
+them on detailed maps and crash the game. If you hit crashes, rebuild at a
+lower resolution. This internal resolution is separate from how large the
+game looks on screen, which the page handles by scaling the buffer to your
+window (see "Display" below).
 
 ## Playing
 
 1. Click "Load a WAD" and pick a `.wad` file. Use one you legally own, or the
    freely redistributable shareware `doom1.wad`.
-2. Optionally edit the key bindings (see "Default controls" below).
+2. Optionally edit the key bindings (see "Default controls" below) and the
+   mouse sensitivity or invert setting.
 3. Optionally pick a pixel filter and aspect ratio. You can also change these
    while playing.
 4. Click "Start DOOM".
+5. Click the game once to capture the mouse. From then on the mouse looks
+   around and the right mouse button shoots. Esc releases the mouse (and
+   opens Doom's menu).
 
 ### Default controls
 
-The key binding fields use JavaScript `KeyboardEvent.code` names, for example
-`KeyW`, `ArrowUp`, `Space`, or `ControlLeft`. The defaults are:
+Mouse (after clicking the game once to capture it):
+
+1. Move mouse: turn, and look up and down
+2. Right mouse button: shoot
+3. Esc: release the mouse (also opens Doom's menu)
+
+Keyboard defaults are WASD with strafing on A and D, since the mouse covers
+turning:
 
 1. Move Forward: `KeyW`
 2. Move Backward: `KeyS`
-3. Turn Left: `ArrowLeft`
-4. Turn Right: `ArrowRight`
-5. Fire: `KeyF`
-6. Use or Open (doors and switches): `KeyE`
+3. Strafe Left: `KeyA`
+4. Strafe Right: `KeyD`
+5. Turn Left: `ArrowLeft`
+6. Turn Right: `ArrowRight`
+7. Fire: `KeyF`
+8. Use or Open (doors and switches): `KeyE`
 
-Fire is `F` and Use is `E` by default. Internally the page remaps `F` to the
-key Doom treats as Fire (Left Ctrl) and remaps `E` to the key Doom treats as
-Use (Space), so `E` really does trigger Use, not Fire.
+The key binding fields use JavaScript `KeyboardEvent.code` names, for example
+`KeyW`, `ArrowUp`, `Space`, or `ControlLeft`. Internally the page remaps each
+physical key onto a key the engine understands: `F` onto Left Ctrl (Doom's
+Fire), `E` onto Space (Doom's Use), and `A`/`D` onto Comma/Period (Doom's
+classic strafe keys, which the engine patch wires up for the browser). So `E`
+really does trigger Use, not Fire, and `A`/`D` really do strafe.
 
 Doom's own Options, Customize Controls menu also works in game and persists to
 the in-memory config file for the session. The page level remap decides which
 physical key is reported to the engine. The in-game menu decides what a (real
 or remapped) key does. Combine both if you need finer control than the page UI
 offers.
+
+### Mouse look
+
+Clicking the game captures the mouse with the browser's pointer lock, the
+same mechanism every browser shooter uses. While captured, horizontal motion
+turns and vertical motion looks up and down, GZDoom style. Esc always
+releases the mouse; that is a browser rule no page can override, and it
+conveniently doubles as opening Doom's own menu. Click the game again to
+recapture.
+
+Sensitivity has five steps (Low to Very high) and can be changed on the setup
+screen or live from the bar at the top of the screen. "Invert mouse look" on
+the setup screen flips the vertical axis.
+
+Two honest limitations of bolting vertical look onto the 1993 renderer with
+y-shearing (the same technique Heretic and Hexen used): the view pitch is
+clamped to a comfortable range rather than a full 90 degrees up and down, and
+the sky texture can look stretched or tiled when looking far up. Both are
+normal for this technique.
 
 ### Display: scaling and pixel filters
 
@@ -133,11 +187,13 @@ over it). It offers:
 2. Aspect:
    - "4:3 (original look)" matches how Doom was shown on period monitors.
    - "Square pixels" displays the buffer without stretching.
-3. Fullscreen: a button that toggles true fullscreen.
+3. Sens: mouse sensitivity, five steps.
+4. Fullscreen: a button that toggles true fullscreen.
 
-You can also set the pixel filter and aspect on the setup screen before you
-start. Changing either control takes effect immediately, so you can compare
-presets live.
+You can also set all of these on the setup screen before you start. Changing
+a control takes effect immediately, so you can compare presets live. While
+the mouse is captured by the game, press Esc first to free it, adjust the
+bar, then click the game to recapture.
 
 ### Why the on-screen size scales but the internal resolution does not
 
@@ -180,9 +236,48 @@ server. The generated version in this repo changes the following:
 10. Uses Emscripten's plain JavaScript string decoder (`-s TEXTDECODER=0`)
     instead of the browser's TextDecoder, because some browsers refuse
     TextDecoder on memory that can grow, which crashes the game at startup.
+11. Exports the two mouse-bridge functions (`DG_EM_MouseMove` and
+    `DG_EM_MouseButtons`) alongside `main`, so the page can feed captured
+    mouse input into the engine.
 
-The original upstream file is preserved as `Makefile.emscripten.orig` the first
-time the script runs.
+No backup file is needed anymore: the script resets the source to the pinned
+upstream commit with git before writing this file, every run.
+
+## What is patched in the engine source
+
+The stock engine has no mouse support in its browser port, and the 1993
+renderer cannot look up and down at all. `install.sh` fixes both by applying
+a source patch (embedded in the script, applied with `patch -p1`) right after
+resetting the clone to the pinned commit. Because the source is reset first,
+the patch always applies to pristine files no matter how many times the
+script runs. What the patch does, file by file:
+
+1. `doomgeneric_emscripten.c` (the browser platform layer): adds the mouse
+   bridge. The page calls two exported functions with captured mouse motion
+   and button state; the bridge accumulates them and posts one standard Doom
+   mouse event per rendered frame. Also maps the Comma and Period keys to
+   Doom's dedicated strafe key codes (the classic keyboard layout strafed on
+   `,` and `.`), which is what the page's A and D bindings ride on.
+2. `g_game.c`: vertical mouse motion now drives a new pitch variable
+   (`lookdir`) instead of walking the player forward and back, which is what
+   original Doom did with it. Mouse motion between game tics is accumulated
+   instead of overwritten, so fast flicks are not partially lost (the game
+   logic runs at 35 Hz while frames render faster). The pitch resets when a
+   level starts.
+3. `r_main.c`: applies the pitch with y-shearing, the same software-renderer
+   technique Heretic and Hexen used: the projection horizon (`centery`)
+   slides up or down the screen, and the `yslope` table that floor and
+   ceiling rendering depends on is recomputed when the pitch or view size
+   changes.
+4. `r_things.c`: the weapon sprite would ride up and down with the sheared
+   view; a compensation term holds it steady on screen (weapon bob still
+   works).
+
+The engine source is pinned to a specific upstream commit (see
+`DOOMGENERIC_COMMIT` in `install.sh`) so the patch always has the exact
+context it was written against. After every build, the script verifies that
+the two bridge functions actually got exported and stops with a clear error
+if not.
 
 ## Why the toolchain is pinned
 
@@ -276,10 +371,35 @@ the crash and the game now runs.
 10. If the engine fails to start, the page shows a readable error box with
     recovery steps instead of a silent black screen.
 11. The setup screen and the browser console show a build stamp (SDK version,
-    internal resolution, and build time), so a stale cached page or a
-    forgotten rebuild is easy to spot.
+    engine commit, internal resolution, and build time), so a stale cached
+    page or a forgotten rebuild is easy to spot.
 12. After every build, `install.sh` checks the compiled `doomgeneric.js` for
-    leftover TextDecoder references and warns if any are found.
+    the TextDecoder string path and for the mouse-bridge exports, and says
+    clearly whether the build came out as intended.
+
+### Mouse look, WASD, and the resolution menu (added later the same day)
+
+13. Full mouse look: click to capture the mouse, horizontal motion turns,
+    vertical motion looks up and down GZDoom style (y-shearing patched into
+    the renderer), and the right mouse button shoots. Implemented as source
+    patches on a pinned engine commit; see "What is patched in the engine
+    source".
+14. Keyboard defaults changed to WASD with A/D strafing (arrows still turn),
+    with strafe reaching the engine through its classic comma and period
+    strafe keys.
+15. Mouse sensitivity control (setup screen and in-game bar) and an invert
+    toggle.
+16. Mouse motion between game tics is accumulated instead of dropped, so
+    fast flicks track correctly.
+17. The internal render resolution is now an interactive menu when building
+    (environment variables still skip it).
+18. The doomgeneric source is pinned to a fixed commit and reset before
+    patching on every run, for the same reproducibility reasons the compiler
+    is pinned.
+19. Fixed a latent crash: the SDK's environment script clears environment
+    variables named EMSDK*, which killed this script under `set -u` whenever
+    `EMSDK_DIR` was overridden from the environment. The script now keeps
+    the value in a name the SDK does not manage.
 
 ## Legal note
 
@@ -327,28 +447,48 @@ legally own, or the freely distributable shareware `doom1.wad`.
    wanted it softer. Use the "Filter" control at the top of the screen. "Crisp"
    is the sharp original look, "Smooth" is the blended look.
 
-7. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
-   ArrayBuffer value must not be resizable` in the console, and the game never
-   starts. The build was made with a too-new Emscripten toolchain whose
-   runtime some browsers reject. Pull the latest version of this repo, re-run
-   `./install.sh` (it now pins a known-good toolchain and always rebuilds from
-   a clean step), then hard refresh the page (Ctrl+Shift+R). See "Why the
-   toolchain is pinned".
+7. Moving the mouse does nothing. The mouse only reaches the game while it is
+   captured: click the game once (the hint at the bottom of the screen shows
+   whenever capture is off). If clicking does not capture, make sure the tab
+   is focused; some browsers also briefly refuse recapture right after Esc,
+   so wait a moment and click again.
 
-   If you rebuilt and the error is still there, you are almost certainly
-   running the old files. Check three things:
+8. The mouse turns but E opens the menu, or keys act strangely right after
+   capturing. Click squarely on the game canvas, not the control bar, and
+   check the bindings on the setup screen before starting.
 
-   - The setup screen should show a "Build:" line at the bottom with the
-     pinned SDK version and a fresh build time. No line at all means the page
-     is the old version. An old time means a stale cached page.
-   - Run `grep -c TextDecoder ~/doomgeneric/doomgeneric/doomgeneric.js`
-     in the container. A fresh pinned build prints `0`.
-   - Close the game's browser tab completely and open `index.html` again. A
-     plain reload can serve a cached copy on `file://` pages.
+9. Looking up shows a stretched or repeating sky. Normal for y-sheared
+   vertical look on the 1993 software renderer (Heretic had the same). The
+   view pitch is deliberately clamped to keep the effect reasonable.
 
-8. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as unique
-   security origins` in the console. Same cause and same fix as the previous
-   entry: a too-new runtime attempted a network style load, which browsers do
-   not allow on `file://` pages. The pinned toolchain embeds everything inside
-   `doomgeneric.js` and never needs to load anything at runtime, which is what
-   makes the no-server design work.
+10. Fire keeps going after Esc. The page releases all mouse buttons when
+    capture ends, so this should not happen; if it does, click the game and
+    release the right button once, and please open an issue with your
+    browser name and version.
+
+11. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
+    ArrayBuffer value must not be resizable` in the console, and the game
+    never starts. The build was made with a too-new Emscripten toolchain
+    whose runtime some browsers reject. Pull the latest version of this repo,
+    re-run `./install.sh` (it pins a known-good toolchain and always rebuilds
+    from a clean step), then hard refresh the page (Ctrl+Shift+R). See "Why
+    the toolchain is pinned".
+
+    If you rebuilt and the error is still there, you are almost certainly
+    running the old files. Check three things:
+
+    - The setup screen should show a "Build:" line at the bottom with the
+      pinned SDK version and a fresh build time. No line at all means the
+      page is the old version. An old time means a stale cached page.
+    - Run `grep -c UTF8Decoder ~/doomgeneric/doomgeneric/doomgeneric.js`
+      in the container. A fresh pinned build prints `0`. (Do not grep for
+      plain "TextDecoder": the word also appears in harmless comments.)
+    - Close the game's browser tab completely and open `index.html` again. A
+      plain reload can serve a cached copy on `file://` pages.
+
+12. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as
+    unique security origins` in the console. Same cause and same fix as the
+    previous entry: a too-new runtime attempted a network style load, which
+    browsers do not allow on `file://` pages. The pinned toolchain embeds
+    everything inside `doomgeneric.js` and never needs to load anything at
+    runtime, which is what makes the no-server design work.

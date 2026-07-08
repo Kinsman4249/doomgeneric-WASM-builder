@@ -37,8 +37,19 @@ set -euo pipefail
 # Where the doomgeneric source code will be cloned to.
 DOOMGENERIC_DIR="${DOOMGENERIC_DIR:-$HOME/doomgeneric}"
 
+# Which doomgeneric commit to build. Pinned for the same reason the compiler
+# is pinned (reproducible builds), and because this script patches the engine
+# source for mouse look: patches are written against exactly this commit and
+# would drift out of date if upstream moved underneath them.
+DOOMGENERIC_COMMIT="${DOOMGENERIC_COMMIT:-dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284}"
+
 # Where the Emscripten SDK (the C-to-WASM compiler) will be installed.
-EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
+# You can still override this by exporting EMSDK_DIR before running. The
+# value is kept in a differently named variable because the SDK's own
+# environment script (emsdk_env.sh) manages, and can CLEAR, environment
+# variables whose names start with EMSDK, which would blow this script up
+# halfway through under 'set -u'.
+WASM_BUILDER_EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
 
 # Which Emscripten SDK release to install. This is PINNED to a known-good
 # version on purpose, instead of "latest". A brand-new SDK release broke this
@@ -66,8 +77,11 @@ EMSDK_VERSION="${EMSDK_VERSION:-3.1.64}"
 # on detailed maps and crash the game. Modest bumps (e.g. 960x600, 1280x800)
 # are usually safe; go higher at your own risk. Keep the ratio close to 8:5
 # (the same shape as 640x400) for the least surprises.
-DOOM_RESX="${DOOM_RESX:-640}"
-DOOM_RESY="${DOOM_RESY:-400}"
+#
+# If neither variable is set, the script shows a small menu (see below). Set
+# both to skip the menu, e.g.:  DOOM_RESX=960 DOOM_RESY=600 ./install.sh
+DOOM_RESX="${DOOM_RESX:-}"
+DOOM_RESY="${DOOM_RESY:-}"
 
 # ---------------------------------------------------------------------------
 # Small helper functions for nicely coloured log output.
@@ -95,7 +109,44 @@ if ! command -v dnf >/dev/null 2>&1; then
   die "dnf not found. This script targets a Fedora-based distrobox container. See README.md."
 fi
 
-# Validate the optional resolution override: both values must be whole numbers.
+# ---------------------------------------------------------------------------
+# 0.5 Internal render resolution choice
+# ---------------------------------------------------------------------------
+# Ask interactively unless (a) both env vars are already set, or (b) there is
+# no terminal to ask on (e.g. the script is being run by another program), in
+# which case the classic default is used. '[ -t 0 ]' is bash for "is standard
+# input a real terminal?".
+if [ -z "$DOOM_RESX" ] || [ -z "$DOOM_RESY" ]; then
+  if [ -t 0 ]; then
+    echo ""
+    echo "Choose the internal render resolution (how sharply the 3D world is"
+    echo "drawn). The page scales it to fill your browser window either way;"
+    echo "this only sets how much detail there is to scale."
+    echo ""
+    echo "  1) 640 x 400    classic doomgeneric look (default)"
+    echo "  2) 960 x 600    sharper, still safe"
+    echo "  3) 1280 x 800   much sharper, small crash risk on very complex maps"
+    echo "  4) custom"
+    echo ""
+    read -r -p "Selection [1-4, Enter for 1]: " RES_CHOICE
+    case "${RES_CHOICE:-1}" in
+      1) DOOM_RESX=640;  DOOM_RESY=400 ;;
+      2) DOOM_RESX=960;  DOOM_RESY=600 ;;
+      3) DOOM_RESX=1280; DOOM_RESY=800 ;;
+      4)
+        read -r -p "Width in pixels: "  DOOM_RESX
+        read -r -p "Height in pixels: " DOOM_RESY
+        ;;
+      *) die "Unrecognized selection '$RES_CHOICE'. Run the script again and pick 1-4." ;;
+    esac
+  else
+    # Not interactive: fall back to the classic default quietly.
+    DOOM_RESX=640
+    DOOM_RESY=400
+  fi
+fi
+
+# Validate the resolution: both values must be whole numbers.
 # The regex ^[0-9]+$ means "one or more digits, start to finish".
 if ! [[ "$DOOM_RESX" =~ ^[0-9]+$ ]] || ! [[ "$DOOM_RESY" =~ ^[0-9]+$ ]]; then
   die "DOOM_RESX and DOOM_RESY must be positive whole numbers (got '$DOOM_RESX' x '$DOOM_RESY')."
@@ -144,14 +195,14 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Emscripten SDK (the compiler that turns C into WebAssembly)
 # ---------------------------------------------------------------------------
-if [ ! -d "$EMSDK_DIR" ]; then
-  log "Cloning emsdk into $EMSDK_DIR..."
-  git clone https://github.com/emscripten-core/emsdk.git "$EMSDK_DIR"
+if [ ! -d "$WASM_BUILDER_EMSDK_DIR" ]; then
+  log "Cloning emsdk into $WASM_BUILDER_EMSDK_DIR..."
+  git clone https://github.com/emscripten-core/emsdk.git "$WASM_BUILDER_EMSDK_DIR"
 else
-  log "emsdk already cloned at $EMSDK_DIR."
+  log "emsdk already cloned at $WASM_BUILDER_EMSDK_DIR."
 fi
 
-cd "$EMSDK_DIR"
+cd "$WASM_BUILDER_EMSDK_DIR"
 log "Installing/activating emsdk $EMSDK_VERSION (skips cleanly if already done)..."
 # 'install' downloads that exact compiler release (a no-op if already there).
 # 'activate' makes it the version that emsdk_env.sh puts on PATH.
@@ -165,7 +216,7 @@ log "Installing/activating emsdk $EMSDK_VERSION (skips cleanly if already done).
 # warning about not being able to follow the sourced file (it does not exist
 # until emsdk is installed).
 # shellcheck disable=SC1091
-source "$EMSDK_DIR/emsdk_env.sh"
+source "$WASM_BUILDER_EMSDK_DIR/emsdk_env.sh"
 
 # Confirm the compiler is really on PATH now; if not, stop with a clear error.
 if ! command -v emcc >/dev/null 2>&1; then
@@ -177,13 +228,13 @@ log "emcc available: $(emcc --version | head -n1)"
 # We append a small sourcing block to the user's shell startup files, but only
 # once (the grep check makes this idempotent).
 for RC in "$HOME/.bashrc" "$HOME/.bash_profile"; do
-  LINE="source \"$EMSDK_DIR/emsdk_env.sh\" > /dev/null 2>&1"
+  LINE="source \"$WASM_BUILDER_EMSDK_DIR/emsdk_env.sh\" > /dev/null 2>&1"
   if ! grep -qF "emsdk_env.sh" "$RC" 2>/dev/null; then
     log "Adding emsdk sourcing to $RC"
     {
       echo ""
       echo "# Emscripten SDK"
-      echo "if [ -f \"$EMSDK_DIR/emsdk_env.sh\" ]; then"
+      echo "if [ -f \"$WASM_BUILDER_EMSDK_DIR/emsdk_env.sh\" ]; then"
       echo "    $LINE"
       echo "fi"
     } >> "$RC"
@@ -202,6 +253,281 @@ else
   log "doomgeneric already cloned at $DOOMGENERIC_DIR."
 fi
 
+cd "$DOOMGENERIC_DIR"
+
+# Make sure the pinned commit is available locally (a fetch is only needed if
+# the clone predates the commit or was made from a different point in time).
+if ! git cat-file -e "$DOOMGENERIC_COMMIT" 2>/dev/null; then
+  log "Fetching doomgeneric history for pinned commit..."
+  git fetch --quiet origin
+fi
+
+# Reset the source to the exact pinned commit. This throws away any tracked
+# changes from previous runs of this script, which is what makes the patch
+# step below safe to re-run: patches always apply to pristine source. Files
+# git does not track (like the build output and our index.html) are kept.
+log "Resetting doomgeneric source to pinned commit ${DOOMGENERIC_COMMIT:0:7}..."
+git reset --hard --quiet "$DOOMGENERIC_COMMIT"
+
+# ---------------------------------------------------------------------------
+# 3.5 Engine patches: mouse look
+# ---------------------------------------------------------------------------
+# The stock engine has no mouse support in its browser port, and vanilla Doom
+# cannot look up and down at all. These patches add:
+#   - a mouse bridge in the platform layer: the web page calls two exported
+#     functions (DG_EM_MouseMove / DG_EM_MouseButtons) and the bridge posts
+#     standard Doom mouse events to the engine (horizontal motion turns,
+#     button bit 0 fires, which the page maps to the RIGHT mouse button),
+#   - vertical look, GZDoom style: mouse Y pitches the view using y-shearing
+#     (the same software-renderer trick Heretic and Hexen used), with the
+#     weapon sprite held steady on screen while the view shears,
+#   - strafe key codes for , and . so the page can put strafing on A and D,
+#   - mouse motion accumulation between game tics, so fast mouse movement is
+#     not dropped (frames run faster than Doom's 35 Hz game logic).
+log "Writing engine patch (mouse look)..."
+cat > wasm-builder-mouselook.patch << 'PATCH_EOF'
+diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
+index 7076dd2..9e56980 100644
+--- a/doomgeneric/doomgeneric_emscripten.c
++++ b/doomgeneric/doomgeneric_emscripten.c
+@@ -3,6 +3,7 @@
+ #include "doomkeys.h"
+ #include "m_argv.h"
+ #include "doomgeneric.h"
++#include "d_event.h"   // [WASM-builder] event_t / D_PostEvent for mouse input
+ 
+ #include <stdio.h>
+ #include <unistd.h>
+@@ -96,6 +97,15 @@ static unsigned char convertToDoomKey(unsigned int key)
+     case SDLK_MINUS:
+       key = KEY_MINUS;
+       break;
++    // [WASM-builder] Strafing: Doom has dedicated strafe key codes, bound to
++    // , and . on the classic keyboard layout. The web page remaps physical
++    // A and D onto Comma and Period so A/D strafe by default.
++    case SDLK_COMMA:
++      key = KEY_STRAFE_L;
++      break;
++    case SDLK_PERIOD:
++      key = KEY_STRAFE_R;
++      break;
+     default:
+       key = tolower(key);
+       break;
+@@ -139,6 +149,63 @@ static void handleKeyInput()
+ }
+ 
+ 
++// ---------------------------------------------------------------------------
++// [WASM-builder] Mouse look bridge.
++//
++// The web page owns the pointer (browser pointer lock) and calls the two
++// exported functions below from JavaScript:
++//   DG_EM_MouseMove(dx, dy)     relative motion since the last call, in
++//                               browser pixels (positive dx = right,
++//                               positive dy = down, as browsers report it)
++//   DG_EM_MouseButtons(bits)    currently held buttons, already translated
++//                               to Doom's bitfield (bit 0 = fire)
++//
++// Motion accumulates here and is flushed as ONE ev_mouse event per rendered
++// frame, mirroring how the engine's own SDL backends batch mouse input.
++// Doom's ev_mouse convention: data2 = X (positive turns right), data3 = Y
++// (positive means up), so the Y axis is negated when the event is built.
++// ---------------------------------------------------------------------------
++
++static int s_MouseDeltaX = 0;
++static int s_MouseDeltaY = 0;
++static int s_MouseButtons = 0;
++static int s_MouseDirty = 0;
++
++EMSCRIPTEN_KEEPALIVE void DG_EM_MouseMove(int dx, int dy)
++{
++  s_MouseDeltaX += dx;
++  s_MouseDeltaY += dy;
++  s_MouseDirty = 1;
++}
++
++EMSCRIPTEN_KEEPALIVE void DG_EM_MouseButtons(int buttons)
++{
++  s_MouseButtons = buttons;
++  s_MouseDirty = 1;
++}
++
++static void flushMouseEvents(void)
++{
++  event_t ev;
++
++  if (!s_MouseDirty)
++  {
++    return;
++  }
++
++  ev.type = ev_mouse;
++  ev.data1 = s_MouseButtons;    // held buttons (bit 0 = fire)
++  ev.data2 = s_MouseDeltaX;     // positive = turn right
++  ev.data3 = -s_MouseDeltaY;    // Doom wants positive = up
++  ev.data4 = 0;
++
++  D_PostEvent(&ev);
++
++  s_MouseDeltaX = 0;
++  s_MouseDeltaY = 0;
++  s_MouseDirty = 0;
++}
++
+ void DG_Init()
+ {
+   window = SDL_CreateWindow("DOOM",
+@@ -168,6 +235,7 @@ void DG_DrawFrame()
+   SDL_RenderPresent(renderer);
+ 
+   handleKeyInput();
++  flushMouseEvents();   // [WASM-builder] deliver this frame's mouse input
+ }
+ 
+ void DG_SleepMs(uint32_t ms)
+diff --git a/doomgeneric/g_game.c b/doomgeneric/g_game.c
+index 9954d78..ea47f2f 100644
+--- a/doomgeneric/g_game.c
++++ b/doomgeneric/g_game.c
+@@ -205,6 +205,12 @@ static boolean *mousebuttons = &mousearray[1];  // allow [-1]
+ int             mousex;
+ int             mousey;         
+ 
++// [WASM-builder mouse look] How far the view is pitched up or down, in
++// y-shear pixels at a 200-line reference screen. Positive looks up. The
++// renderer scales this to the real view height (see r_main.c).
++int             lookdir;
++#define MAXLOOKDIR 100
++
+ static int      dclicktime;
+ static boolean  dclickstate;
+ static int      dclicks; 
+@@ -534,7 +540,14 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
+         } 
+     }
+ 
+-    forward += mousey; 
++    // [WASM-builder mouse look] Vertical mouse motion pitches the view
++    // (see r_main.c). Classic Doom walked you forward and back instead,
++    // which nobody expects once real mouse look exists.
++    lookdir += mousey / 2;
++    if (lookdir > MAXLOOKDIR)
++	lookdir = MAXLOOKDIR;
++    else if (lookdir < -MAXLOOKDIR)
++	lookdir = -MAXLOOKDIR;
+ 
+     if (strafe) 
+ 	side += mousex*2; 
+@@ -662,6 +675,7 @@ void G_DoLoadLevel (void)
+     memset (gamekeydown, 0, sizeof(gamekeydown));
+     joyxmove = joyymove = joystrafemove = 0;
+     mousex = mousey = 0;
++    lookdir = 0;   // [WASM-builder mouse look] start each level looking level
+     sendpause = sendsave = paused = false;
+     memset(mousearray, 0, sizeof(mousearray));
+     memset(joyarray, 0, sizeof(joyarray));
+@@ -827,8 +841,11 @@ boolean G_Responder (event_t* ev)
+ 		 
+       case ev_mouse: 
+         SetMouseButtons(ev->data1);
+-	mousex = ev->data2*(mouseSensitivity+5)/10; 
+-	mousey = ev->data3*(mouseSensitivity+5)/10; 
++	// [WASM-builder mouse look] += instead of =, so motion from several
++	// mouse events between game tics adds up instead of being dropped.
++	// G_BuildTiccmd zeroes these after it consumes them.
++	mousex += ev->data2*(mouseSensitivity+5)/10;
++	mousey += ev->data3*(mouseSensitivity+5)/10;
+ 	return true;    // eat events 
+  
+       case ev_joystick: 
+diff --git a/doomgeneric/r_main.c b/doomgeneric/r_main.c
+index 22278fe..4d09815 100644
+--- a/doomgeneric/r_main.c
++++ b/doomgeneric/r_main.c
+@@ -58,6 +58,13 @@ int			centery;
+ 
+ fixed_t			centerxfrac;
+ fixed_t			centeryfrac;
++
++// [WASM-builder mouse look] lookdir lives in g_game.c: pitch in y-shear
++// pixels at a 200-line reference screen, positive = up. r_shearpixels is
++// the shift applied at the current view size, shared with r_things.c so
++// the weapon sprite can be held steady on screen.
++extern int		lookdir;
++int			r_shearpixels;
+ fixed_t			projection;
+ 
+ // just for profiling purposes
+@@ -851,6 +858,43 @@ void R_SetupFrame (player_t* player)
+     else
+ 	fixedcolormap = 0;
+ 		
++    // [WASM-builder mouse look] Vertical look via y-shearing, the same
++    // trick Heretic and Hexen used: slide the projection horizon
++    // (centery) up or down the screen. The yslope table used by floor
++    // and ceiling rendering depends on centery, so recompute it too.
++    // Only runs when the pitch or the view size actually changed.
++    {
++	static int	cachedshear = 0;
++	static int	cachedviewheight = 0;
++	int		shear;
++	fixed_t		dy;
++
++	// Scale from the 200-line reference to the real view height, then
++	// clamp so the horizon always stays on screen with a margin.
++	shear = lookdir * viewheight / 200;
++	if (shear > viewheight/2 - 8)
++	    shear = viewheight/2 - 8;
++	else if (shear < -(viewheight/2 - 8))
++	    shear = -(viewheight/2 - 8);
++
++	if (shear != cachedshear
++	    || viewheight != cachedviewheight
++	    || centery != viewheight/2 + shear)
++	{
++	    centery = viewheight/2 + shear;
++	    centeryfrac = centery<<FRACBITS;
++	    for (i=0 ; i<viewheight ; i++)
++	    {
++		dy = ((i-centery)<<FRACBITS)+FRACUNIT/2;
++		dy = abs(dy);
++		yslope[i] = FixedDiv ( (viewwidth<<detailshift)/2*FRACUNIT, dy);
++	    }
++	    cachedshear = shear;
++	    cachedviewheight = viewheight;
++	}
++	r_shearpixels = shear;
++    }
++
+     framecount++;
+     validcount++;
+ }
+diff --git a/doomgeneric/r_things.c b/doomgeneric/r_things.c
+index 74e7369..c2cfed1 100644
+--- a/doomgeneric/r_things.c
++++ b/doomgeneric/r_things.c
+@@ -685,6 +685,15 @@ void R_DrawPSprite (pspdef_t* psp)
+     vis = &avis;
+     vis->mobjflags = 0;
+     vis->texturemid = (BASEYCENTER<<FRACBITS)+FRACUNIT/2-(psp->sy-spritetopoffset[lump]);
++
++    // [WASM-builder mouse look] The view shear moves centery, which would
++    // drag the weapon sprite up and down the screen with it. Shift the
++    // sprite the opposite way so it stays put (weapon bob still applies).
++    {
++	extern int r_shearpixels;
++	vis->texturemid += FixedDiv(r_shearpixels<<FRACBITS,
++				    pspritescale<<detailshift);
++    }
+     vis->x1 = x1 < 0 ? 0 : x1;
+     vis->x2 = x2 >= viewwidth ? viewwidth-1 : x2;	
+     vis->scale = pspritescale<<detailshift;
+PATCH_EOF
+
+log "Applying engine patch..."
+patch -p1 < wasm-builder-mouselook.patch
+
 # All of the buildable C sources live in the inner "doomgeneric" folder.
 BUILD_DIR="$DOOMGENERIC_DIR/doomgeneric"
 cd "$BUILD_DIR"
@@ -215,11 +541,9 @@ cd "$BUILD_DIR"
 # replace it with a version that uses Emscripten's own bundled SDL2 ports and
 # produces a single self-contained .js file that works straight from file://.
 #
-# The original is backed up once as Makefile.emscripten.orig.
-log "Writing patched Makefile.emscripten (backs up original once)..."
-if [ ! -f Makefile.emscripten.orig ]; then
-  cp Makefile.emscripten Makefile.emscripten.orig
-fi
+# (No backup file is needed: the git reset above already restored the
+# pristine upstream Makefile before this rewrite, every run.)
+log "Writing patched Makefile.emscripten..."
 
 # NOTE on the heredoc below:
 #   cat > FILE << 'MAKEFILE_EOF' ... MAKEFILE_EOF
@@ -293,7 +617,9 @@ CFLAGS += -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
 #                                dumping symbols into the global scope.
 #   EXPORTED_RUNTIME_METHODS   : keep callMain (to start the game manually) and
 #                                FS (to write the WAD) reachable from JS.
-#   EXPORTED_FUNCTIONS=[_main] : keep the C main() reachable for callMain.
+#   EXPORTED_FUNCTIONS         : keep the C main() reachable for callMain, and
+#                                the two mouse-bridge functions the page calls
+#                                for mouse look (see the engine patches).
 #   INVOKE_RUN=0               : do NOT auto-run main() on load; the page starts
 #                                the engine itself, after the WAD is in place.
 LDFLAGS += $(SDL_FLAGS) \
@@ -306,7 +632,7 @@ LDFLAGS += $(SDL_FLAGS) \
 	-s MODULARIZE=1 \
 	-s EXPORT_NAME="DoomModule" \
 	-s EXPORTED_RUNTIME_METHODS=['callMain','FS'] \
-	-s EXPORTED_FUNCTIONS=['_main'] \
+	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons'] \
 	-s INVOKE_RUN=0
 
 # Standard C math and C libraries.
@@ -438,6 +764,26 @@ cat > index.html << 'HTML_EOF'
   /* "Smooth" preset: the browser's default smoothing (bilinear) => softer. */
   #canvas.smooth { image-rendering: auto; }
 
+  /*
+   * Mouse-capture hint: shown at the bottom of the stage while the game is
+   * running but the mouse is not captured (pointer lock not active). Hidden
+   * automatically the moment the mouse is captured.
+   */
+  #mousehint {
+    display: none;               /* toggled from JavaScript */
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #cfc;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
   /* Fatal-error box: shown centered over the stage if the engine fails to
      start, so the failure is readable instead of a silent black screen. */
   #errbox {
@@ -472,20 +818,27 @@ cat > index.html << 'HTML_EOF'
     your browser.
   </p>
 
-  <h3>2. Key bindings (physical key &rarr; Doom action)</h3>
+  <h3>2. Controls</h3>
+  <p class="hint">
+    The mouse turns and looks up/down once you click the game to capture it
+    (Esc releases it). The <b>right mouse button shoots</b>. Keyboard
+    defaults: WASD movement with A/D strafing (the mouse covers turning),
+    F also shoots, E opens doors and presses switches.
+  </p>
   <div id="keybinds">
-    <label>Move Forward: <input id="bind-up"    value="KeyW"></label>
-    <label>Move Backward: <input id="bind-down"  value="KeyS"></label>
-    <label>Turn Left: <input id="bind-left"  value="ArrowLeft"></label>
-    <label>Turn Right: <input id="bind-right" value="ArrowRight"></label>
-    <label>Fire: <input id="bind-fire"  value="KeyF"></label>
+    <label>Move Forward: <input id="bind-up"     value="KeyW"></label>
+    <label>Move Backward: <input id="bind-down"   value="KeyS"></label>
+    <label>Strafe Left: <input id="bind-sleft"  value="KeyA"></label>
+    <label>Strafe Right: <input id="bind-sright" value="KeyD"></label>
+    <label>Turn Left: <input id="bind-left"   value="ArrowLeft"></label>
+    <label>Turn Right: <input id="bind-right"  value="ArrowRight"></label>
+    <label>Fire: <input id="bind-fire"   value="KeyF"></label>
     <label>Use / Open (doors, switches): <input id="bind-use" value="KeyE"></label>
   </div>
   <p class="hint">
     Values are JavaScript <code>KeyboardEvent.code</code> names (for example
     <code>KeyW</code>, <code>ArrowUp</code>, <code>Space</code>,
-    <code>ControlLeft</code>). Defaults: Fire is <code>F</code>, Use is
-    <code>E</code>.
+    <code>ControlLeft</code>).
   </p>
 
   <h3>3. Display</h3>
@@ -506,9 +859,26 @@ cat > index.html << 'HTML_EOF'
       </select>
     </label>
   </p>
+  <p>
+    <label>
+      Mouse sensitivity:
+      <select id="sensMode">
+        <option value="0.5">Low</option>
+        <option value="1" selected>Normal</option>
+        <option value="1.5">High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+      </select>
+    </label>
+    &nbsp;&nbsp;
+    <label>
+      <input type="checkbox" id="invertLook"> Invert mouse look
+    </label>
+  </p>
   <p class="hint">
-    You can change these at any time while playing using the bar at the top of
-    the screen. "Crisp" keeps the classic chunky pixels; "Smooth" blends them.
+    You can change filter, aspect, and sensitivity at any time while playing
+    using the bar at the top of the screen (press Esc first to free the
+    mouse). "Crisp" keeps the classic chunky pixels; "Smooth" blends them.
   </p>
 
   <p>
@@ -537,8 +907,20 @@ cat > index.html << 'HTML_EOF'
         <option value="square">Square</option>
       </select>
     </label>
+    <label>Sens:
+      <select id="sensModeHud">
+        <option value="0.5">Low</option>
+        <option value="1">Normal</option>
+        <option value="1.5">High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+      </select>
+    </label>
     <button id="fullscreenBtn" type="button">Fullscreen</button>
   </div>
+
+  <!-- Shown while the game runs without the mouse captured. -->
+  <div id="mousehint">Click the game to capture the mouse. Mouse looks around, right button shoots, Esc releases the mouse.</div>
 
   <!-- The game canvas. tabindex="-1" lets us focus it from code. -->
   <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
@@ -624,8 +1006,16 @@ const filterSetup   = document.getElementById('filterMode');
 const aspectSetup   = document.getElementById('aspectMode');
 const filterHud     = document.getElementById('filterModeHud');
 const aspectHud     = document.getElementById('aspectModeHud');
+const sensSetup     = document.getElementById('sensMode');
+const sensHud       = document.getElementById('sensModeHud');
+const invertLook    = document.getElementById('invertLook');
+const mousehint     = document.getElementById('mousehint');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
 const errbox        = document.getElementById('errbox');
+
+// Filled in once the engine has booted; the mouse handlers need it to call
+// the two C bridge functions the engine exports.
+let doomModule = null;
 
 /* =========================================================================
  * Fatal error reporting
@@ -687,15 +1077,22 @@ document.getElementById('wadfile').addEventListener('change', function (e) {
  * (not Fire).
  * ========================================================================= */
 
-// Build the "physical key -> key Doom should see" table from the input fields.
+// Build the "physical key -> key Doom should see" table from the input
+// fields. The right-hand values are the keys the ENGINE understands:
+// arrows move and turn, Comma and Period strafe (Doom's classic , and .
+// strafe keys, wired up in the engine's browser layer), Ctrl fires, Space
+// uses. Identity mappings (like ArrowLeft to ArrowLeft) are fine: the key
+// passes through, and the browser's default action still gets cancelled.
 function buildRemapTable() {
   return {
-    [document.getElementById('bind-up').value]:    'ArrowUp',     // move forward
-    [document.getElementById('bind-down').value]:  'ArrowDown',   // move backward
-    [document.getElementById('bind-left').value]:  'ArrowLeft',   // turn left
-    [document.getElementById('bind-right').value]: 'ArrowRight',  // turn right
-    [document.getElementById('bind-fire').value]:  'ControlLeft', // Fire
-    [document.getElementById('bind-use').value]:   'Space',       // Use / Open
+    [document.getElementById('bind-up').value]:     'ArrowUp',     // move forward
+    [document.getElementById('bind-down').value]:   'ArrowDown',   // move backward
+    [document.getElementById('bind-sleft').value]:  'Comma',       // strafe left
+    [document.getElementById('bind-sright').value]: 'Period',      // strafe right
+    [document.getElementById('bind-left').value]:   'ArrowLeft',   // turn left
+    [document.getElementById('bind-right').value]:  'ArrowRight',  // turn right
+    [document.getElementById('bind-fire').value]:   'ControlLeft', // Fire
+    [document.getElementById('bind-use').value]:    'Space',       // Use / Open
   };
 }
 
@@ -754,9 +1151,90 @@ function installKeyRemap(remapTable) {
   document.addEventListener('keydown', remapEvent, true);
   document.addEventListener('keyup', remapEvent, true);
 
-  // Clicking the canvas focuses it (helps some browsers route input reliably).
-  canvas.addEventListener('mousedown', function () { canvas.focus(); });
+  // Clicking the canvas focuses it (helps some browsers route input
+  // reliably) and captures the mouse for mouse look. Any button works as
+  // the capture click; buttons only reach the game while captured.
+  canvas.addEventListener('mousedown', function () {
+    canvas.focus();
+    if (gameStarted && document.pointerLockElement !== canvas) {
+      canvas.requestPointerLock();
+    }
+  });
 }
+
+/* =========================================================================
+ * Mouse look (pointer lock)
+ * -------------------------------------------------------------------------
+ * Clicking the game "captures" the mouse using the browser's pointer lock,
+ * the same mechanism every browser FPS uses. While captured:
+ *   - moving the mouse turns the view and looks up and down,
+ *   - the RIGHT mouse button shoots,
+ *   - Esc releases the mouse (a browser rule that pages cannot override;
+ *     handily, Esc also opens Doom's own menu).
+ * The motion and button state are handed to two small functions compiled
+ * into the engine (DG_EM_MouseMove / DG_EM_MouseButtons), which turn them
+ * into standard Doom mouse events.
+ * ========================================================================= */
+
+// Sub-pixel remainders: sensitivity can be fractional (for example 0.5), so
+// keep the fraction that did not fit into a whole pixel and add it to the
+// next movement instead of throwing it away.
+let mouseAccX = 0;
+let mouseAccY = 0;
+
+function pointerLocked() {
+  return document.pointerLockElement === canvas;
+}
+
+// Show the capture hint only while the game runs without the mouse captured.
+function updateMouseHint() {
+  mousehint.style.display = (gameStarted && !pointerLocked()) ? 'block' : 'none';
+}
+
+// Translate held browser buttons into the engine's mouse-button bitfield.
+// The engine treats bit 0 as Fire, and per this project's design the RIGHT
+// mouse button is the shoot button. The left button is deliberately not
+// mapped to anything: it is the "capture the mouse" click.
+function engineButtonBits(e) {
+  let bits = 0;
+  if (e.buttons & 2) bits |= 1;   // right button held -> engine Fire bit
+  return bits;
+}
+
+document.addEventListener('mousemove', function (e) {
+  if (!gameStarted || !doomModule || !pointerLocked()) return;
+
+  const sens = parseFloat(sensHud.value) || 1;
+  mouseAccX += e.movementX * sens;
+  mouseAccY += e.movementY * sens * (invertLook.checked ? -1 : 1);
+
+  // Send whole pixels to the engine, keep the fractional remainder.
+  const dx = Math.trunc(mouseAccX);
+  const dy = Math.trunc(mouseAccY);
+  if (dx !== 0 || dy !== 0) {
+    doomModule._DG_EM_MouseMove(dx, dy);
+    mouseAccX -= dx;
+    mouseAccY -= dy;
+  }
+});
+
+function sendMouseButtons(e) {
+  if (!gameStarted || !doomModule || !pointerLocked()) return;
+  e.preventDefault();
+  doomModule._DG_EM_MouseButtons(engineButtonBits(e));
+}
+document.addEventListener('mousedown', sendMouseButtons);
+document.addEventListener('mouseup', sendMouseButtons);
+
+document.addEventListener('pointerlockchange', function () {
+  updateMouseHint();
+  if (!pointerLocked() && doomModule) {
+    // The capture ended (Esc, alt-tab, etc.): release all engine buttons so
+    // the player does not keep firing forever.
+    doomModule._DG_EM_MouseButtons(0);
+  }
+  if (gameStarted) canvas.focus();
+});
 
 /* =========================================================================
  * Display scaling and filtering
@@ -827,6 +1305,9 @@ function wireControl(setupEl, hudEl, onChange) {
 
 wireControl(filterSetup, filterHud, function () { setFilter(filterHud.value); });
 wireControl(aspectSetup, aspectHud, function () { applyScaling(); });
+// Sensitivity needs no immediate action: the mousemove handler reads the
+// current value live on every mouse movement.
+wireControl(sensSetup, sensHud, function () {});
 
 // Fullscreen toggle. We fullscreen the whole stage (not just the canvas) so the
 // black letterbox background covers the screen too.
@@ -864,6 +1345,7 @@ startBtn.addEventListener('click', function () {
   // Copy the setup-screen display choices into the in-game HUD controls.
   filterHud.value = filterSetup.value;
   aspectHud.value = aspectSetup.value;
+  sensHud.value   = sensSetup.value;
 
   // Swap from the setup screen to the game stage.
   document.getElementById('setup').style.display = 'none';
@@ -878,8 +1360,11 @@ startBtn.addEventListener('click', function () {
     // Put the chosen WAD where the engine will look for it.
     Module.FS.writeFile('/doom1.wad', wadData);
 
-    // From here on, intercept and remap keys.
+    // From here on, intercept and remap keys, and let the mouse handlers
+    // reach the engine's mouse bridge.
+    doomModule = Module;
     gameStarted = true;
+    updateMouseHint();
 
     // Size the canvas once before we start (the MutationObserver will refine it
     // as soon as the engine sets its real buffer size during callMain).
@@ -910,7 +1395,7 @@ HTML_EOF
 # variables are NOT expanded inside it; we substitute the placeholder here
 # instead. The stamp shows on the setup screen and in the browser console,
 # which makes stale-cache and forgot-to-rebuild problems obvious at a glance.
-BUILD_STAMP="emsdk ${EMSDK_VERSION}, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
+BUILD_STAMP="emsdk ${EMSDK_VERSION}, doomgeneric ${DOOMGENERIC_COMMIT:0:7} with mouse look, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
 sed -i "s|__BUILD_INFO__|${BUILD_STAMP}|" index.html
 log "Stamped index.html: ${BUILD_STAMP}"
 
@@ -931,16 +1416,28 @@ if [ ! -f "$BUILD_DIR/doomgeneric.js" ]; then
   die "Build finished but doomgeneric.js was not produced. Check the make output above."
 fi
 
-# Verify the TEXTDECODER=0 setting actually took effect: the engine output
-# should not reference TextDecoder at all. If it does, the toolchain ignored
-# the setting. The page's shim keeps that from crashing the game, but it is
-# unexpected with the pinned toolchain, so say something.
-if grep -q "TextDecoder" "$BUILD_DIR/doomgeneric.js"; then
-  warn "doomgeneric.js still references TextDecoder. The page ships a shim that"
-  warn "keeps this from crashing, but this is unexpected with the pinned"
-  warn "toolchain. See the README troubleshooting section."
+# Verify the TEXTDECODER=0 setting actually took effect. The marker to look
+# for is "UTF8Decoder", the runtime's cached TextDecoder instance: it only
+# exists when the string code path we opted out of was emitted. (Plain
+# "TextDecoder" also appears in harmless comments, so do not grep for that.)
+# The page's shim keeps even a bad build from crashing, but it is unexpected
+# with the pinned toolchain, so say something.
+if grep -q "UTF8Decoder" "$BUILD_DIR/doomgeneric.js"; then
+  warn "doomgeneric.js still contains the TextDecoder string path. The page"
+  warn "ships a shim that keeps this from crashing, but it is unexpected with"
+  warn "the pinned toolchain. See the README troubleshooting section."
 else
-  log "Verified: doomgeneric.js contains no TextDecoder usage (as intended)."
+  log "Verified: doomgeneric.js uses the plain JS string decoder (as intended)."
+fi
+
+# Verify the mouse-look bridge got exported: the page calls these two
+# functions from JavaScript, so the build is broken for mouse input if the
+# linker dropped them.
+if grep -q "_DG_EM_MouseMove" "$BUILD_DIR/doomgeneric.js" \
+   && grep -q "_DG_EM_MouseButtons" "$BUILD_DIR/doomgeneric.js"; then
+  log "Verified: mouse-look bridge functions are exported."
+else
+  die "Mouse bridge functions missing from doomgeneric.js. The engine patch or EXPORTED_FUNCTIONS list did not take effect."
 fi
 
 log "Build complete."
