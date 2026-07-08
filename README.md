@@ -8,8 +8,9 @@ What you get:
 
 1. No web server needed. Open `index.html` directly using a `file://` URL.
 2. Load any WAD at runtime through a file picker in the page, plus optional
-   PWADs (mods and maps) on top. Nothing is baked into the build and nothing
-   is uploaded anywhere.
+   PWADs (mods and maps) and DeHackEd patches (.deh) on top. HACX 1.2 works
+   as a standalone IWAD. Nothing is baked into the build and nothing is
+   uploaded anywhere.
 3. In-browser key remapping, in addition to Doom's own in-game
    Options, Customize Controls menu.
 4. Window scaling with pixel-filter presets. The game fills the browser window,
@@ -220,7 +221,12 @@ strength. It offers:
      "Performance notes").
 5. Fullscreen: a button that toggles true fullscreen.
 
-### Loading PWADs (mods)
+You can also set all of these on the setup screen before you start. Changing
+a control takes effect immediately, so you can compare presets live. While
+the mouse is captured by the game, press Esc first to free it, adjust the
+bar, then click the game to recapture.
+
+### Loading PWADs and DeHackEd patches (mods)
 
 Next to the main WAD picker there is an optional picker for PWADs, add-on
 WAD files with extra maps or content. You can select several; they load on
@@ -228,28 +234,42 @@ top of the main WAD in selection order using the engine's `-file` option.
 Two vanilla-engine caveats:
 
 1. PWADs need a full IWAD (registered, retail, Freedoom, and so on). The
-   shareware `doom1.wad` refuses add-on files by design; the engine stops
-   with an error saying so, which the page shows in its red error box.
+   shareware `doom1.wad` refuses add-on files by design; the setup screen
+   catches that combination before starting.
 2. This engine uses the plain vanilla WAD loader (there is no `-merge`
    support in doomgeneric's file set), so PWADs that replace sprites or
    floor textures may not display those replacements. Map and level PWADs
    work as expected.
 
-One more format caveat that limit removal does NOT change: this engine only
-understands VANILLA map behavior. Many modern community WADs (including
-most slaughter megawads such as Cleanout) are built in the Boom format and
-need a Boom-compatible port. On this engine, Boom-only switch and walk
-triggers silently do nothing (breaking progression), stepping into a sector
-with a Boom-only sector type stops the game with "P_PlayerInSpecialSector:
-unknown special", and DEHACKED lumps are ignored entirely (there is no
-DEHACKED support compiled in). Pick WADs whose readme says vanilla,
-limit-removing, or complevel 2/3; "Boom" or "complevel 9" WADs are out of
-scope for this engine.
+DeHackEd is fully supported. DeHackEd patches (.deh files) are how classic
+mods change monster behavior, weapon stats, and game text. The build
+restores the parser from Chocolate Doom (doomgeneric had deleted it while
+keeping all the integration code), which enables all of the following:
 
-You can also set all of these on the setup screen before you start. Changing
-a control takes effect immediately, so you can compare presets live. While
-the mouse is captured by the game, press Esc first to free it, adjust the
-bar, then click the game to recapture.
+1. A .deh file picker next to the PWAD picker. Patches apply in selection
+   order via the engine's `-deh` option.
+2. PWADs that carry a DEHACKED lump have it applied automatically.
+3. The HACX 1.2 standalone IWAD works: the engine recognizes `hacx.wad`
+   and loads its built-in DEHACKED lump by itself.
+4. Freedoom's built-in DEHACKED lump now applies, so its texts are correct.
+5. Chex Quest works if you add its required patch through the picker with
+   the filename `chex.deh` (files keep their names exactly for this
+   reason).
+6. Load order matches classic behavior: the IWAD's own patch first, then
+   your .deh files, then PWAD DEHACKED lumps.
+
+A malformed patch stops the engine with a parse error, which the page shows
+in its red error box including the offending line.
+
+One format caveat that neither limit removal nor DeHackEd changes: this
+engine only understands VANILLA map behavior. Many modern community WADs
+(including most slaughter megawads such as Cleanout) are built in the Boom
+format and need a Boom-compatible port. On this engine, Boom-only switch
+and walk triggers silently do nothing (breaking progression), and stepping
+into a sector with a Boom-only sector type stops the game with
+"P_PlayerInSpecialSector: unknown special". Pick WADs whose readme says
+vanilla, limit-removing, or complevel 2/3; "Boom" or "complevel 9" WADs are
+out of scope for this engine.
 
 ### Why the on-screen size scales but the internal resolution does not
 
@@ -330,7 +350,17 @@ script runs. What the patch does, file by file:
 4. `r_things.c`: the weapon sprite would ride up and down with the sheared
    view; a compensation term holds it steady on screen (weapon bob still
    works).
-5. Static limit removal, Doom-plus style, across several files. Vanilla
+5. DeHackEd support restored. doomgeneric kept every line of Chocolate
+   Doom's DeHackEd integration (the IWAD patch loader with its HACX,
+   Freedoom, and Chex Quest handling, the `-deh` command line parser, and
+   the PWAD DEHACKED lump loader) but fenced it off and deleted the parser
+   implementation files. The patch re-opens the four fences in `d_main.c`
+   and flips the `FEATURE_DEHACKED` switch in `doomfeatures.h`; the parser
+   sources themselves are restored by `install.sh` from Chocolate Doom
+   2.3.0, the exact release this fork descends from (the deh headers that
+   remained in doomgeneric are byte-identical to that release's), with a
+   one-line adaptation for this tree's WAD directory layout.
+6. Static limit removal, Doom-plus style, across several files. Vanilla
    Doom sized its arrays for 1994 maps; slaughter-grade community maps
    overflow them, which either crashes with an engine error or silently
    corrupts memory. Every change is a pure `#define` size bump (no code
@@ -585,6 +615,18 @@ the crash and the game now runs.
     in it, and it comes back to full strength.
 39. Removed the essay about the 1997 source-release notes from this README;
     the one finding that mattered is recorded in item 26.
+
+### DeHackEd support (round nine)
+
+40. Full DeHackEd support: a .deh file picker on the setup screen (files
+    keep their names, applied in order via `-deh`), automatic loading of
+    DEHACKED lumps carried by PWADs, and automatic IWAD patches, which
+    makes the HACX 1.2 standalone IWAD, Freedoom's text fixes, and Chex
+    Quest (with `chex.deh` supplied) work. doomgeneric had kept all of
+    Chocolate Doom's DeHackEd integration but deleted the parser; the
+    engine patch re-opens the integration and `install.sh` restores the
+    parser sources from Chocolate Doom 2.3.0, this fork's exact ancestor
+    vintage. See item 5 under "What is patched in the engine source".
 
 ## Performance notes
 

@@ -297,6 +297,11 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #   - performance under overload: the tic catch-up loop is capped (an
 #     overloaded frame runs slow motion instead of freezing the tab)
 #     and the zone allocator default grows from 6 to 64 MiB,
+#   - DeHackEd support re-enabled: doomgeneric kept all of Chocolate
+#     Doom's DeHackEd integration but fenced it off and deleted the
+#     parser sources. The patch re-opens the integration points and
+#     turns the feature back on; the parser sources themselves are
+#     restored from Chocolate Doom in the next step,
 #   - a quit notifier: quitting from Doom's own menu calls a hook the
 #     page installs, so the page can return to its setup screen,
 #   - a game-tic counter export beside the frame counter, so the page
@@ -327,9 +332,18 @@ index 1939dbd..0f3125c 100644
  
      while (!PlayersInGame() || lowtic < gametic/ticdup + counts)
 diff --git a/doomgeneric/d_main.c b/doomgeneric/d_main.c
-index 9012e5f..5f6850f 100644
+index 9012e5f..86711fd 100644
 --- a/doomgeneric/d_main.c
 +++ b/doomgeneric/d_main.c
+@@ -1085,7 +1085,7 @@ static void D_Endoom(void)
+ 	exit(0);
+ }
+ 
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+ // Load dehacked patches needed for certain IWADs.
+ static void LoadIwadDeh(void)
+ {
 @@ -1157,6 +1157,18 @@ static void LoadIwadDeh(void)
  }
  #endif
@@ -349,6 +363,33 @@ index 9012e5f..5f6850f 100644
  //
  // D_DoomMain
  //
+@@ -1165,7 +1177,7 @@ void D_DoomMain (void)
+     int p;
+     char file[256];
+     char demolumpname[9];
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+     int numiwadlumps;
+ #endif
+ 
+@@ -1377,7 +1389,7 @@ void D_DoomMain (void)
+ 
+     DEH_printf("W_Init: Init WADfiles.\n");
+     D_AddFile(iwadfile);
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+     numiwadlumps = numlumps;
+ #endif
+ 
+@@ -1388,7 +1400,7 @@ void D_DoomMain (void)
+     D_IdentifyVersion();
+     InitGameVersion();
+ 
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+     //!
+     // @category mod
+     //
 @@ -1510,7 +1522,10 @@ void D_DoomMain (void)
          printf("Playing demo %s.\n", file);
      }
@@ -361,6 +402,22 @@ index 9012e5f..5f6850f 100644
  
      // Generate the WAD hash table.  Speed things up a bit.
      W_GenerateHashTable();
+diff --git a/doomgeneric/doomfeatures.h b/doomgeneric/doomfeatures.h
+index dff6936..b2e32ab 100644
+--- a/doomgeneric/doomfeatures.h
++++ b/doomgeneric/doomfeatures.h
+@@ -25,7 +25,10 @@
+ 
+ // Enables dehacked support ('-deh')
+ 
+-#undef FEATURE_DEHACKED
++// [WASM-builder] DeHackEd support enabled: install.sh restores the
++// parser implementation from Chocolate Doom 2.3.0 (this fork's exact
++// ancestor), and the engine patch re-opens the integration points.
++#define FEATURE_DEHACKED 1
+ 
+ // Enables multiplayer support (network games)
+ 
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
 index 7076dd2..14d7054 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
@@ -816,9 +873,49 @@ PATCH_EOF
 log "Applying engine patch..."
 patch -p1 < wasm-builder-engine.patch
 
+# ---------------------------------------------------------------------------
+# 3.6 DeHackEd parser sources (from Chocolate Doom)
+# ---------------------------------------------------------------------------
+# doomgeneric descends from Chocolate Doom but deleted the DeHackEd parser
+# implementation files (only the headers and the integration code remain).
+# DeHackEd patches (.deh) are how classic mods change monster behavior,
+# weapon stats, and text: HACX, Chex Quest, Freedoom, and countless mods
+# rely on them. We restore the implementation from Chocolate Doom at the
+# exact release this fork descends from (verified: the deh headers that
+# remain in doomgeneric are byte-identical to that release), so the files
+# drop straight in. Pinned to a tag for reproducibility, cached like the
+# other clones, re-copied on every run so the result is always consistent.
+CHOCO_TAG="chocolate-doom-2.3.0"
+CHOCO_DIR="$DOOMGENERIC_DIR/chocolate-deh-src"
+if [ ! -d "$CHOCO_DIR" ]; then
+  log "Fetching the DeHackEd implementation (Chocolate Doom $CHOCO_TAG)..."
+  git clone --quiet --depth 1 --branch "$CHOCO_TAG" \
+    https://github.com/chocolate-doom/chocolate-doom.git "$CHOCO_DIR"
+else
+  log "Chocolate Doom sources already fetched at $CHOCO_DIR."
+fi
+
+log "Installing DeHackEd parser sources into the engine..."
+# Shared parser core (the three deh headers already in doomgeneric are kept).
+cp "$CHOCO_DIR/src/deh_defs.h" "$CHOCO_DIR/src/deh_io.h" \
+   "$CHOCO_DIR/src/deh_mapping.h" "$CHOCO_DIR/src/deh_io.c" \
+   "$CHOCO_DIR/src/deh_main.c" "$CHOCO_DIR/src/deh_mapping.c" \
+   "$CHOCO_DIR/src/deh_str.c" "$CHOCO_DIR/src/deh_text.c" doomgeneric/
+# Doom-specific section parsers (things, frames, weapons, ammo, cheats...).
+cp "$CHOCO_DIR"/src/doom/deh_*.c doomgeneric/
+
+# One-line adaptation: this engine's WAD directory is an array of structs,
+# while that Chocolate release used an array of pointers.
+sed -i 's/lumpinfo\[lumpnum\]->name/lumpinfo[lumpnum].name/' doomgeneric/deh_io.c
+
 # All of the buildable C sources live in the inner "doomgeneric" folder.
 BUILD_DIR="$DOOMGENERIC_DIR/doomgeneric"
 cd "$BUILD_DIR"
+
+# Sanity: the DeHackEd sources must be in place before the build.
+if [ ! -f deh_main.c ] || [ ! -f deh_defs.h ]; then
+  die "DeHackEd sources missing after the copy step. Check the Chocolate Doom clone at $CHOCO_DIR."
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Patched Makefile.emscripten
@@ -948,9 +1045,10 @@ LIBS += -lm -lc
 OBJDIR=build
 OUTPUT=doomgeneric
 
-# The full list of Doom engine object files to build. This matches upstream
-# doomgeneric's emscripten object list (sound files included).
-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_emscripten.o mus2mid.o i_sdlmusic.o i_sdlsound.o
+# The full list of Doom engine object files to build: upstream doomgeneric's
+# emscripten object list (sound included), plus the DeHackEd parser sources
+# restored from Chocolate Doom (the deh_*.o entries at the end).
+SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_emscripten.o mus2mid.o i_sdlmusic.o i_sdlsound.o deh_ammo.o deh_bexstr.o deh_cheat.o deh_doom.o deh_frame.o deh_io.o deh_main.o deh_mapping.o deh_misc.o deh_ptr.o deh_sound.o deh_str.o deh_text.o deh_thing.o deh_weapon.o
 OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
 
 # Default target: build the game.
@@ -1158,7 +1256,20 @@ cat > index.html << 'HTML_EOF'
     option), in the order selected. They need a full IWAD: the shareware
     <code>doom1.wad</code> refuses add-on files by design. This engine uses
     the plain vanilla loader, so PWADs that replace sprites or floor
-    textures may not show those replacements.
+    textures may not show those replacements. PWADs that carry a DEHACKED
+    lump have it applied automatically.
+  </p>
+  <p>
+    <label>Optional DeHackEd patches (.deh): <input type="file" id="dehfiles" accept=".deh,.bex" multiple></label>
+  </p>
+  <p class="hint">
+    DeHackEd patches change monster behavior, weapon stats, and text; many
+    classic mods ship one next to their PWAD. Applied in selection order
+    with the engine's <code>-deh</code> option, after the main WAD's own
+    patch and before PWAD DEHACKED lumps, matching classic load order.
+    Files keep their names, so Chex Quest's required patch works if the
+    file is named <code>chex.deh</code>. The HACX 1.2 IWAD needs nothing
+    here; its built-in patch loads by itself.
   </p>
 
   <h3>2. Controls</h3>
@@ -1581,17 +1692,46 @@ document.getElementById('pwadfiles').addEventListener('change', function (e) {
   files.forEach(function (file, index) {
     const reader = new FileReader();
     reader.onload = function (ev) {
+      const bytes = new Uint8Array(ev.target.result);
+      const lumps = wadLumpNames(bytes);
       pwadData[index] = {
         // A simple, safe name for the virtual filesystem; the engine only
         // cares about the WAD's contents, not its filename.
         name: 'pwad_' + index + '.wad',
-        bytes: new Uint8Array(ev.target.result),
+        bytes: bytes,
+        // Remember whether this PWAD carries a DeHackEd patch as a lump;
+        // if any loaded PWAD does, the engine is started with -dehlump so
+        // those patches actually apply.
+        hasDehacked: !!(lumps && lumps.has('DEHACKED')),
       };
       updateSetupWarning();
     };
     reader.readAsArrayBuffer(file);
   });
   updateSetupWarning();
+});
+
+// Optional DeHackEd patch files (.deh / .bex). Unlike PWADs these KEEP
+// their real filenames in the virtual filesystem: the engine looks for
+// specific names in one case (Chex Quest wants chex.deh next to the IWAD).
+let dehData = [];   // array of { name, bytes }
+
+document.getElementById('dehfiles').addEventListener('change', function (e) {
+  const files = Array.from(e.target.files || []);
+  dehData = [];
+  const usedNames = new Set();
+  files.forEach(function (file, index) {
+    const reader = new FileReader();
+    // Sanitize but preserve the real name; deduplicate collisions.
+    let name = String(file.name || 'patch.deh').toLowerCase()
+                 .replace(/[^a-z0-9._-]/g, '_');
+    if (usedNames.has(name)) name = index + '_' + name;
+    usedNames.add(name);
+    reader.onload = function (ev) {
+      dehData[index] = { name: name, bytes: new Uint8Array(ev.target.result) };
+    };
+    reader.readAsArrayBuffer(file);
+  });
 });
 
 /* =========================================================================
@@ -2052,6 +2192,23 @@ function bootEngine() {
         Module.FS.writeFile('/' + p.name, p.bytes);
         wadArgs.push('/' + p.name);
       });
+    }
+
+    // DeHackEd patch files: written under their real names (Chex Quest
+    // looks for chex.deh specifically) and applied in order with -deh.
+    const loadedDehs = dehData.filter(function (p) { return p; });
+    if (loadedDehs.length > 0) {
+      wadArgs.push('-deh');
+      loadedDehs.forEach(function (p) {
+        Module.FS.writeFile('/' + p.name, p.bytes);
+        wadArgs.push('/' + p.name);
+      });
+    }
+
+    // If any PWAD carries a DEHACKED lump, tell the engine to apply those
+    // lumps too (they load last, matching classic ordering).
+    if (loadedPwads.some(function (p) { return p.hasDehacked; })) {
+      wadArgs.push('-dehlump');
     }
 
     // From here on, intercept and remap keys, and let the mouse handlers
