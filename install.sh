@@ -294,6 +294,11 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #     8x-32x so slaughter-grade maps stop crashing or corrupting memory.
 #     Pure size bumps: no code paths change, gameplay stays identical, and
 #     Chocolate Doom overrun EMULATIONS stay untouched,
+#   - performance under overload: the tic catch-up loop is capped (an
+#     overloaded frame runs slow motion instead of freezing the tab)
+#     and the zone allocator default grows from 6 to 64 MiB,
+#   - a game-tic counter export beside the frame counter, so the page
+#     can show game speed (tics per second) next to FPS,
 #   - a WebAssembly fix for the engine error path: vanilla registered a
 #     boolean-returning function as a void exit handler through a cast,
 #     which x86 tolerates but WASM rejects with a "function signature
@@ -301,6 +306,24 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #     instead of a clean exit with its real message.
 log "Writing engine patch (mouse look, frame counter, limit removal)..."
 cat > wasm-builder-engine.patch << 'PATCH_EOF'
+diff --git a/doomgeneric/d_loop.c b/doomgeneric/d_loop.c
+index 1939dbd..0f3125c 100644
+--- a/doomgeneric/d_loop.c
++++ b/doomgeneric/d_loop.c
+@@ -762,6 +762,13 @@ void TryRunTics (void)
+     if (counts < 1)
+ 	counts = 1;
+ 
++    // [WASM-builder] Never try to catch up by more than a few tics in
++    // one frame. Unbounded catch-up freezes the browser tab on heavy
++    // maps; capped catch-up is slow motion, like DOS Doom on a slow
++    // machine. Single player only.
++    if (!net_client_connected && counts > 4)
++	counts = 4;
++
+     // wait for new tics if needed
+ 
+     while (!PlayersInGame() || lowtic < gametic/ticdup + counts)
 diff --git a/doomgeneric/d_main.c b/doomgeneric/d_main.c
 index 9012e5f..5f6850f 100644
 --- a/doomgeneric/d_main.c
@@ -337,7 +360,7 @@ index 9012e5f..5f6850f 100644
      // Generate the WAD hash table.  Speed things up a bit.
      W_GenerateHashTable();
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
-index 7076dd2..80e54cf 100644
+index 7076dd2..85d5a09 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
 +++ b/doomgeneric/doomgeneric_emscripten.c
 @@ -3,6 +3,7 @@
@@ -364,7 +387,7 @@ index 7076dd2..80e54cf 100644
      default:
        key = tolower(key);
        break;
-@@ -139,6 +149,78 @@ static void handleKeyInput()
+@@ -139,6 +149,89 @@ static void handleKeyInput()
  }
  
  
@@ -440,10 +463,21 @@ index 7076dd2..80e54cf 100644
 +  return s_FrameCount;
 +}
 +
++// [WASM-builder] The engine's game-logic clock (35 per second at full
++// speed). The page shows tics per second beside FPS: rendering speed and
++// game-logic speed are different things, and telling them apart is the
++// whole point of a performance readout on heavy maps.
++extern int gametic;
++
++EMSCRIPTEN_KEEPALIVE int DG_EM_GetGameTic(void)
++{
++  return gametic;
++}
++
  void DG_Init()
  {
    window = SDL_CreateWindow("DOOM",
-@@ -167,7 +249,9 @@ void DG_DrawFrame()
+@@ -167,7 +260,9 @@ void DG_DrawFrame()
    SDL_RenderCopy(renderer, texture, NULL, NULL);
    SDL_RenderPresent(renderer);
  
@@ -520,6 +554,22 @@ index 9954d78..8a7fdae 100644
  	return true;    // eat events 
   
        case ev_joystick: 
+diff --git a/doomgeneric/i_system.c b/doomgeneric/i_system.c
+index 53ab2c9..4bfd843 100644
+--- a/doomgeneric/i_system.c
++++ b/doomgeneric/i_system.c
+@@ -55,7 +55,10 @@
+ #include <CoreFoundation/CFUserNotification.h>
+ #endif
+ 
+-#define DEFAULT_RAM 6 /* MiB */
++// [WASM-builder] Vanilla: 6 MiB, sized for 1993. Slaughter-grade maps
++// need far more zone memory (NUTS.wad alone spawns 10000+ objects).
++// Memory is cheap in this build; -mb still overrides.
++#define DEFAULT_RAM 64 /* MiB */
+ #define MIN_RAM     6  /* MiB */
+ 
+ 
 diff --git a/doomgeneric/p_local.h b/doomgeneric/p_local.h
 index 95fa405..9830b00 100644
 --- a/doomgeneric/p_local.h
@@ -793,12 +843,18 @@ SDL_FLAGS = -s USE_SDL=2 -s USE_SDL_MIXER=2
 CC=emcc
 
 # ---- Compile-time flags -------------------------------------------------
-#   -DFEATURE_SOUND   : compile in doomgeneric's sound/music support.
-#   $(SDL_FLAGS)      : SDL2 headers.
-#   $(EXTRA_CFLAGS)   : injected by install.sh at build time. This is where the
-#                       optional internal-resolution override lands, e.g.
-#                       -DDOOMGENERIC_RESX=960 -DDOOMGENERIC_RESY=600
-CFLAGS += -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
+#   -O2                    : optimize. Without this, emcc compiles at -O0
+#                            (no optimization at all), which is 5-20x slower
+#                            at runtime; heavy maps were freezing largely
+#                            because of it.
+#   -fno-strict-aliasing   : 1993 C plays loose with pointer types in a few
+#                            places; this tells the optimizer not to assume
+#                            otherwise. Standard practice for Doom ports.
+#   -DFEATURE_SOUND        : compile in doomgeneric's sound/music support.
+#   $(SDL_FLAGS)           : SDL2 headers.
+#   $(EXTRA_CFLAGS)        : injected by install.sh at build time (the
+#                            internal-resolution override lands here).
+CFLAGS += -O2 -fno-strict-aliasing -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
 
 # ---- Link-time flags ----------------------------------------------------
 # These "-s NAME=VALUE" options are LINKER settings. They must live in LDFLAGS
@@ -838,7 +894,19 @@ CFLAGS += -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
 #                                for mouse look (see the engine patches).
 #   INVOKE_RUN=0               : do NOT auto-run main() on load; the page starts
 #                                the engine itself, after the WAD is in place.
+#   -O2 (at link)              : REQUIRED at link time too with Emscripten:
+#                                this is where the WebAssembly optimizer
+#                                (wasm-opt) and JS minification run.
+#   STACK_SIZE=1048576         : 1 MiB C stack (the modern emcc default is a
+#                                slim 64 KiB, and the renderer's recursive
+#                                BSP walk on huge maps wants headroom).
+#   INITIAL_MEMORY=134217728   : start with 128 MiB so the enlarged engine
+#                                limits and big WADs do not trigger repeated
+#                                memory-growth pauses mid game.
 LDFLAGS += $(SDL_FLAGS) \
+	-O2 \
+	-s STACK_SIZE=1048576 \
+	-s INITIAL_MEMORY=134217728 \
 	-s SDL2_MIXER_FORMATS='["mid"]' \
 	-s SINGLE_FILE=1 \
 	-s FORCE_FILESYSTEM=1 \
@@ -848,7 +916,7 @@ LDFLAGS += $(SDL_FLAGS) \
 	-s MODULARIZE=1 \
 	-s EXPORT_NAME="DoomModule" \
 	-s EXPORTED_RUNTIME_METHODS=['callMain','FS'] \
-	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons','_DG_EM_GetFrameCount'] \
+	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons','_DG_EM_GetFrameCount','_DG_EM_GetGameTic'] \
 	-s INVOKE_RUN=0
 
 # Standard C math and C libraries.
@@ -1720,17 +1788,28 @@ document.addEventListener('pointerlockchange', function () {
  * ========================================================================= */
 
 let fpsLastFrames = 0;
+let fpsLastTics = 0;
 let fpsLastTime = 0;
 
 function updateFps() {
   if (!doomModule || !gameStarted) return;
   const now = performance.now();
   const frames = doomModule._DG_EM_GetFrameCount();
+  const tics = doomModule._DG_EM_GetGameTic();
   if (fpsLastTime > 0 && now > fpsLastTime) {
-    const fps = (frames - fpsLastFrames) * 1000 / (now - fpsLastTime);
-    fpsbox.textContent = 'FPS: ' + Math.round(fps);
+    const dt = (now - fpsLastTime) / 1000;
+    const fps = (frames - fpsLastFrames) / dt;
+    const tps = (tics - fpsLastTics) / dt;
+    // Two different speeds, and telling them apart matters on heavy maps:
+    //   FPS  = how often the engine renders (browser driven).
+    //   game = game-logic tics per second; 35 is full speed. Fewer means
+    //          the map is too heavy to simulate in real time, and the game
+    //          runs in slow motion (the page itself stays responsive).
+    fpsbox.textContent =
+      'FPS: ' + Math.round(fps) + '  |  game: ' + tps.toFixed(1) + '/35';
   }
   fpsLastFrames = frames;
+  fpsLastTics = tics;
   fpsLastTime = now;
 }
 
@@ -1986,8 +2065,9 @@ fi
 # if the linker dropped any of them.
 if grep -q "_DG_EM_MouseMove" "$BUILD_DIR/doomgeneric.js" \
    && grep -q "_DG_EM_MouseButtons" "$BUILD_DIR/doomgeneric.js" \
-   && grep -q "_DG_EM_GetFrameCount" "$BUILD_DIR/doomgeneric.js"; then
-  log "Verified: mouse bridge and FPS counter functions are exported."
+   && grep -q "_DG_EM_GetFrameCount" "$BUILD_DIR/doomgeneric.js" \
+   && grep -q "_DG_EM_GetGameTic" "$BUILD_DIR/doomgeneric.js"; then
+  log "Verified: mouse bridge and performance counter functions are exported."
 else
   die "Engine exports missing from doomgeneric.js. The engine patch or EXPORTED_FUNCTIONS list did not take effect."
 fi

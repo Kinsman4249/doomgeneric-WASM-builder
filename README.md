@@ -207,11 +207,13 @@ over it). It offers:
    - "Square pixels" displays the buffer without stretching.
 3. Sens X and Sens Y: horizontal (turning) and vertical (looking) mouse
    sensitivity, five steps each.
-4. FPS: shows or hides a frames-per-second readout in the top right corner.
-   The number comes from a counter inside the engine (incremented every
-   rendered frame, sampled once a second), not from a page-side guess. Note
-   that Doom's game logic always runs at its classic fixed 35 Hz; the FPS
-   number is how often the engine renders, which the browser drives.
+4. FPS: shows or hides a performance readout in the top right corner, with
+   two numbers sampled once a second from counters inside the engine:
+   - "FPS" is how often the engine renders, which the browser drives.
+   - "game: N/35" is game-logic speed in tics per second. 35 is full speed.
+     Fewer means the map is too heavy to simulate in real time and the game
+     is running in slow motion; the page itself stays responsive (see
+     "Performance notes").
 5. Fullscreen: a button that toggles true fullscreen.
 
 ### Loading PWADs (mods)
@@ -589,6 +591,45 @@ the crash and the game now runs.
     doom.wad, true shareware stays doom1.wad), so Doom II and Final Doom
     WADs run as themselves and accept PWADs.
 
+### Performance (same day, round seven)
+
+33. The engine is now compiled and linked with `-O2` plus
+    `-fno-strict-aliasing`. Every earlier build ran at emcc's default of
+    `-O0`, which is the single biggest reason heavy maps struggled.
+34. Capped the tic catch-up loop in the engine patch: overloaded frames run
+    at most 4 tics, so heavy maps go slow motion instead of freezing the
+    browser tab. Single player only.
+35. Zone allocator default raised from 6 MiB to 64 MiB (`-mb` still
+    overrides), C stack raised to 1 MiB, initial WebAssembly memory set to
+    128 MiB.
+36. The FPS readout now shows game-logic speed beside render speed
+    ("game: N/35"), fed by a new engine export, so slow motion and render
+    slowness are distinguishable at a glance.
+
+## Performance notes
+
+What the build does for speed, and what to expect on heavy maps:
+
+1. The engine is compiled and linked with `-O2`. Earlier versions of this
+   script set no optimization level at all, which means emcc's default of
+   `-O0`, easily 5 to 20 times slower at runtime. This matters more than
+   everything else combined.
+2. The tic catch-up loop is capped (engine patch). Vanilla tries to run as
+   many game tics per frame as real time says it owes; when one tic takes
+   longer than a tic's worth of real time, the debt grows every frame and
+   a browser tab freezes outright. Capped, the game runs in slow motion
+   under overload, exactly like DOS Doom on a slow machine, and the page
+   stays responsive. Single player only; netgame sync logic is untouched.
+3. The zone allocator default grows from 6 MiB (a 1993 number) to 64 MiB,
+   the C stack is 1 MiB, and the WebAssembly memory starts at 128 MiB so
+   memory growth does not pause the game mid fight.
+4. The FPS readout shows game speed beside render speed ("game: N/35").
+   On something like NUTS.wad, expect full speed while monsters are asleep
+   and a slow-motion dip when thousands wake at once; that is the 1993
+   simulation loop meeting 10000 monsters, not a bug in the build. There
+   is no further honest speedup available without changing how the game
+   itself works (see "About the Carmack notes and 3D acceleration").
+
 ## Legal note
 
 The doomgeneric engine source, and the underlying Doom engine, is GPL licensed
@@ -702,6 +743,15 @@ legally own, or the freely distributable shareware `doom1.wad`.
     (check the console line "IWAD will be presented to the engine as").
     If you still see this on a current build, your WAD really is the
     shareware one; the setup screen warning will say so.
+
+20. The game froze the whole tab on a heavy map (huge monster counts).
+    Old builds compiled without optimization AND let the engine try to
+    catch up on missed game tics without limit, so an overloaded frame
+    grew more overloaded forever. Fixed twice over: builds now use -O2,
+    and catch-up is capped so overload plays as slow motion instead
+    (watch "game: N/35" in the FPS readout drop below 35 while the page
+    stays responsive). If the readout sits at 35/35 and it still feels
+    wrong, that is something else; open an issue with the map name.
 
 13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game
