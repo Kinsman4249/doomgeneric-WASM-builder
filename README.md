@@ -291,6 +291,11 @@ actually playing it.
 - Chex Quest and Chex Quest 2 load as total conversions over Freedoom Phase
   1, merged so their graphics display, with the Chex DeHackEd patch applied.
 - Harmony loads as a total conversion over Freedoom Phase 2 the same way.
+- WolfenDoom: First Encounter (Laz Rojas' faithful recreation of the
+  Wolfenstein 3D demo episode) loads as a total conversion over Freedoom
+  Phase 2. It is a fan work using id's own Wolfenstein designs, distributed
+  with the author's stated permission; his readme is installed in the pack
+  folder, as his distribution terms ask.
 
 Loading a free game replaces anything you picked by hand above. If a button
 reports the game is missing, re-run `install.sh` and answer yes to the
@@ -730,6 +735,12 @@ the crash and the game now runs.
     are based on film and comics properties, so they are deliberately NOT
     offered as downloads; the links go to their Doom Wiki articles so
     players can research and decide for themselves.
+48. Added WolfenDoom: First Encounter to the freeware pack as a one-click
+    total conversion over Freedoom Phase 2. Unlike the film and comics TCs
+    above, this is a fan recreation of id's own franchise whose readme
+    explicitly permits distribution with the readme included, which the
+    pack honors by installing the readme alongside. Verified: single PWAD,
+    Doom II based, no DeHackEd needed, decodes intact from the pack.
 
 ## Performance notes
 
