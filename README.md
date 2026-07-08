@@ -20,16 +20,16 @@ What you get:
    Options, Customize Controls menu.
 5. Window scaling with pixel filters. The game fills the browser window, and
    you choose between "Crisp" (the classic chunky pixels), "Smooth"
-   (softened), and three GPU upscalers: "hq2x", "xBR", and "DCCI". Switch
-   live while playing.
+   (softened), and three GPU upscalers, each in 2x and stronger 4x
+   variants: "hq2x/hq4x", "xBR", and "DCCI". Switch live while playing.
 6. Full mouse look, GZDoom style. Click the game to capture the mouse: moving
    it turns AND looks up and down, and both mouse buttons shoot. Horizontal
    and vertical sensitivity are separate (seven steps each), and raw input
    (no mouse acceleration) is on by default. This goes beyond what the stock
    engine can do; the build script patches the engine source to add it (see
    "What is patched in the engine source").
-7. An interactive resolution menu when you build, so you can pick how sharply
-   the 3D world is rendered without editing anything.
+7. An optional packaging step that turns the build into a ready-to-upload
+   website folder (all paths relative, works on any domain or subfolder).
 8. An FPS counter, read from a frame counter inside the engine itself and
    toggleable from the in-game bar.
 9. Doom-plus style limit removal: vanilla's 1994-sized static arrays are
@@ -74,9 +74,8 @@ chmod +x install.sh
 The script is idempotent, which means it is safe to re-run. Each step checks
 whether its work is already done before doing it again. In order, it will:
 
-1. Ask which internal render resolution to build (see "Choosing the internal
-   render resolution" below). Setting `DOOM_RESX` and `DOOM_RESY` skips the
-   question.
+1. Ask which frame buffer size to build (see "Choosing the frame buffer
+   size" below). Setting `DOOM_RESX` and `DOOM_RESY` skips the question.
 2. Install required packages (`git make cmake python3 gcc gcc-c++ patch`) if
    any are missing.
 3. Clone the Emscripten SDK into `~/emsdk` if not already present, then
@@ -90,40 +89,33 @@ whether its work is already done before doing it again. In order, it will:
 6. Write a patched `Makefile.emscripten` (see "What is patched" below).
 7. Write `index.html` (the WAD picker, controls UI, and display controls).
 8. Build and verify. The output is `~/doomgeneric/doomgeneric/doomgeneric.js`
-   and `index.html`.
+   and `index.html`. The paths to everything, including the downloaded
+   freeware games, are printed at the end.
+9. Optionally package everything (page, engine, freeware pack) into a
+   ready-to-upload `site/` folder plus a `doom-site.tar.gz`. All paths in
+   the page are relative, so the folder works on any domain, any
+   subdirectory, any static host, with zero configuration. Control with
+   `SITE=1` or `SITE=0`, or answer the prompt.
 
 When it finishes, open `~/doomgeneric/doomgeneric/index.html` directly in a
 browser. If the container shares your home directory with the host (the
 Distrobox default), that same path exists on your host too, so you can open it
 from your host file manager or browser.
 
-### Choosing the internal render resolution
+### Choosing the frame buffer size
 
-Doom renders the game world into a fixed size pixel buffer that is chosen at
-build time. When you run the script in a terminal it shows a small menu:
+When you run the script in a terminal it shows a small menu of frame buffer
+sizes (640x400 default, 960x600, 1280x800, or custom). Setting `DOOM_RESX`
+and `DOOM_RESY` skips the menu.
 
-```text
-  1) 640 x 400    classic doomgeneric look (default)
-  2) 960 x 600    sharper, still safe
-  3) 1280 x 800   much sharper, small crash risk on very complex maps
-  4) custom
-```
-
-Pressing Enter takes the classic default. To skip the menu entirely (or when
-running the script from something that is not a terminal), set both
-environment variables:
-
-```bash
-DOOM_RESX=960 DOOM_RESY=600 ./install.sh
-```
-
-For custom values, keep the shape close to 8:5 (the same shape as 640x400)
-for the fewest surprises. Be careful going high: the original Doom software
-renderer has hard internal limits, and very high resolutions can overflow
-them on detailed maps and crash the game. If you hit crashes, rebuild at a
-lower resolution. This internal resolution is separate from how large the
-game looks on screen, which the page handles by scaling the buffer to your
-window (see "Display" below).
+An honest note about what this DOES and does not do: this engine always
+renders the game at the original 320x200 (that is the vanilla renderer,
+faithfully), and then enlarges it into the frame buffer by a whole-number
+factor. So the buffer size does not make the world sharper; larger buffers
+mainly cost a little more memory and copying time. The classic default is
+fine for almost everyone. On-screen size is handled separately by the page
+(see "Display" below), and the GPU filters work from the true 320x200
+picture regardless of this setting.
 
 ## Playing
 
@@ -218,11 +210,16 @@ strength. It offers:
      classic large, sharp Doom pixels. This is closest to the original look.
    - "Smooth" uses the browser's built-in bilinear smoothing, which blends the
      pixels for a softer image.
-   - "hq2x", "xBR", and "DCCI" are GPU upscalers (WebGL shaders) that redraw
-     the frame at double resolution with edge-aware interpolation, the same
-     family of filters emulators use. hq2x rounds pixel-art edges, xBR keeps
-     sharper diagonals, and DCCI is a smooth directional-cubic look. If your
-     browser has no usable WebGL, these fall back to Smooth automatically.
+   - "hq2x", "xBR", and "DCCI" are GPU upscalers (WebGL shaders) with
+     edge-aware interpolation, the same family of filters emulators use,
+     each in a 2x and a stronger 4x (double-pass) variant. The engine
+     always renders the classic 320x200 picture internally, so the shaders
+     recover that true image through the engine's integer enlargement and
+     upscale it properly; earlier versions filtered the already-fattened
+     pixels, which visibly did almost nothing. hq2x rounds pixel-art
+     edges, xBR keeps sharper diagonals, DCCI is a smooth directional
+     cubic look. If your browser has no usable WebGL, these fall back to
+     Smooth automatically.
 2. Aspect:
    - "4:3 (original look)" matches how Doom was shown on period monitors.
    - "Square pixels" displays the buffer without stretching.
@@ -292,7 +289,11 @@ actually playing it.
 - The Chex Quest Trilogy button is Chex Quest 3: Vanilla Edition (Melodic
   Spaceship, 2024), a self-contained backport of all three Chex Quests to
   this exact engine class, loaded as its own IWAD with the plain-DeHackEd
-  patch its readme prescribes for Chocolate-class engines. Chex Quest was
+  patch its readme prescribes for Chocolate-class engines. The title
+  screen says Chex Quest 3 because that is the game it is built from; the
+  EPISODES are the individual quests (Episode 1 is Chex Quest, Episode 2
+  is Chex Quest 2, Episode 3 is Chex Quest 3's campaign), picked from the
+  New Game menu. Chex Quest was
   a freeware cereal promotion, and Chex Quest 3 was made officially free by
   General Mills in 2019; the backport's readme is installed in the pack
   folder.
@@ -790,6 +791,27 @@ the crash and the game now runs.
     prescribes for Chocolate-class engines. No base WAD, no merging, no
     patch-name mismatches possible. Verified: true IWAD with a complete
     resource set, decodes intact from the pack.
+
+### Filters that actually filter, and server packaging (round seventeen)
+
+54. Fixed the GPU filters looking like they did nothing. The engine always
+    renders 320x200 and integer-fattens it into the frame buffer, so the
+    shaders were edge-smoothing three-pixel-wide staircases, which their
+    single-pixel corner rules cannot touch. The shaders now sample at the
+    logical 320x200 pixel centers, recovering the true image exactly, and
+    upscale that instead.
+55. Each GPU filter now comes in 2x and stronger 4x (double-pass) variants:
+    hq2x/hq4x, xBR 2x/4x, DCCI 2x/4x.
+56. Corrected the frame-buffer menu documentation: the buffer size never
+    changed rendering sharpness (the vanilla renderer is always 320x200);
+    it only sets the integer enlargement factor.
+57. The installer now prints the path to the downloaded freeware games,
+    and gained an optional packaging step that produces a ready-to-upload
+    site folder and tarball; every reference in the page is relative, so
+    it is agnostic to domain names and subdirectories.
+58. Clarified in the page and here that the Chex Quest Trilogy's episodes
+    ARE the three games: Episode 1 is Chex Quest, Episode 2 is Chex Quest
+    2, Episode 3 is Chex Quest 3.
 
 ## Performance notes
 

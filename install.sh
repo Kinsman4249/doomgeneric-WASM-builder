@@ -1348,7 +1348,10 @@ cat > index.html << 'HTML_EOF'
     <code>install.sh</code> downloaded next to this page (nothing leaves
     your machine; each game is only held in memory while you play). The Chex
     Quest Trilogy button is Chex Quest 3: Vanilla Edition, a self-contained
-    backport of all three quests to this engine class. Harmony, WolfenDoom,
+    backport of all three quests to this engine class: despite the title
+    screen saying Chex Quest 3, pick New Game and the episodes ARE the
+    games (Episode 1 is Chex Quest, Episode 2 is Chex Quest 2, Episode 3
+    is Chex Quest 3's new campaign). Harmony, WolfenDoom,
     and STRAIN run as total conversions over Freedoom, merged properly so
     their graphics show. STRAIN is Alpha Dog
     Alliance's legendary 1997 partial conversion; its distribution terms
@@ -1406,8 +1409,11 @@ cat > index.html << 'HTML_EOF'
         <option value="crisp" selected>Crisp (original pixels)</option>
         <option value="smooth">Smooth</option>
         <option value="hq2x">hq2x (GPU)</option>
-        <option value="xbr">xBR (GPU)</option>
-        <option value="dcci">DCCI (GPU)</option>
+        <option value="hq4x">hq4x (GPU, strongest)</option>
+        <option value="xbr2x">xBR 2x (GPU)</option>
+        <option value="xbr4x">xBR 4x (GPU, strongest)</option>
+        <option value="dcci2x">DCCI 2x (GPU)</option>
+        <option value="dcci4x">DCCI 4x (GPU, strongest)</option>
       </select>
     </label>
     &nbsp;&nbsp;
@@ -1490,8 +1496,11 @@ cat > index.html << 'HTML_EOF'
         <option value="crisp">Crisp</option>
         <option value="smooth">Smooth</option>
         <option value="hq2x">hq2x</option>
-        <option value="xbr">xBR</option>
-        <option value="dcci">DCCI</option>
+        <option value="hq4x">hq4x</option>
+        <option value="xbr2x">xBR 2x</option>
+        <option value="xbr4x">xBR 4x</option>
+        <option value="dcci2x">DCCI 2x</option>
+        <option value="dcci4x">DCCI 4x</option>
       </select>
     </label>
     <label>Aspect:
@@ -2233,13 +2242,24 @@ fpsToggle.addEventListener('change', function () {
 // modes on the game canvas. The GPU modes (hq2x, xBR, DCCI) hide the game
 // canvas (it keeps receiving clicks) and show the filtered copy instead;
 // if WebGL is unavailable they quietly fall back to Smooth.
-let activeGpuFilter = null;   // 'hq2x' | 'xbr' | 'dcci' | null
+// { prog: 'hq2x'|'xbr'|'dcci', passes: 1|2 } or null. Two passes doubles
+// the filter twice over (4x total), the "strongest" options.
+let activeGpuFilter = null;
+
+const GPU_FILTER_MODES = {
+  hq2x:   { prog: 'hq2x', passes: 1 },
+  hq4x:   { prog: 'hq2x', passes: 2 },
+  xbr2x:  { prog: 'xbr',  passes: 1 },
+  xbr4x:  { prog: 'xbr',  passes: 2 },
+  dcci2x: { prog: 'dcci', passes: 1 },
+  dcci4x: { prog: 'dcci', passes: 2 },
+};
 
 function setFilter(mode) {
-  const wantsGpu = (mode === 'hq2x' || mode === 'xbr' || mode === 'dcci');
+  const wantsGpu = !!GPU_FILTER_MODES[mode];
   canvas.classList.remove('crisp', 'smooth');
   if (wantsGpu && gpuFilterReady()) {
-    activeGpuFilter = mode;
+    activeGpuFilter = GPU_FILTER_MODES[mode];
     canvas.style.opacity = '0';
     filtercanvas.style.display = 'block';
     canvas.classList.add('crisp');   // irrelevant while hidden, kept sane
@@ -2555,12 +2575,51 @@ function gpuFilterReady() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    // Intermediate texture + framebuffer for the two-pass (4x) modes.
+    glFilter.midTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glFilter.midTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    glFilter.midW = 0;
+    glFilter.midH = 0;
+    glFilter.fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glFilter.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+                            gl.TEXTURE_2D, glFilter.midTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     glFilter.gl = gl;
     glFilter.ok = true;
   } catch (err) {
     console.log('GPU filters disabled: ' + err.message);
   }
   return glFilter.ok;
+}
+
+// The engine always renders the classic 320x200 and integer-fattens it
+// into the frame buffer (its boot log prints the scaling factor). Filtering
+// the fattened pixels does nearly nothing: the edge-aware rules only work
+// at the true pixel scale. So the shaders sample at the LOGICAL 320x200
+// pixel centers (which recovers the original image exactly, since the
+// fattening is a perfect nearest-neighbour enlargement) and upscale THAT.
+function logicalSourceSize(bw, bh) {
+  const k = Math.max(1, Math.min(Math.floor(bw / 320), Math.floor(bh / 200)));
+  return { w: Math.floor(bw / k), h: Math.floor(bh / k) };
+}
+
+// Render one filter pass: sample srcTex (logical size sw x sh) and draw the
+// filtered result at 2x into the currently bound target.
+function runFilterPass(progName, srcTex, sw, sh, tw, th) {
+  const gl = glFilter.gl;
+  gl.viewport(0, 0, tw, th);
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  const prog = glFilter.programs[progName];
+  gl.useProgram(prog.p);
+  gl.uniform2f(prog.uSrcSize, sw, sh);
+  gl.enableVertexAttribArray(prog.aPos);
+  gl.vertexAttribPointer(prog.aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 // Runs forever; costs nothing while no GPU filter is selected.
@@ -2570,19 +2629,36 @@ function gpuFilterFrame() {
   const gl = glFilter.gl;
   const bw = canvas.width, bh = canvas.height;
   if (!bw || !bh) return;
-  if (filtercanvas.width !== bw * 2 || filtercanvas.height !== bh * 2) {
-    filtercanvas.width = bw * 2;
-    filtercanvas.height = bh * 2;
+
+  const logical = logicalSourceSize(bw, bh);
+  const scale = activeGpuFilter.passes === 2 ? 4 : 2;
+  const ow = logical.w * scale, oh = logical.h * scale;
+  if (filtercanvas.width !== ow || filtercanvas.height !== oh) {
+    filtercanvas.width = ow;
+    filtercanvas.height = oh;
   }
-  gl.viewport(0, 0, bw * 2, bh * 2);
+
+  // Upload this frame's game image.
   gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-  const prog = glFilter.programs[activeGpuFilter];
-  gl.useProgram(prog.p);
-  gl.uniform2f(prog.uSrcSize, bw, bh);
-  gl.enableVertexAttribArray(prog.aPos);
-  gl.vertexAttribPointer(prog.aPos, 2, gl.FLOAT, false, 0, 0);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  if (activeGpuFilter.passes === 1) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    runFilterPass(activeGpuFilter.prog, glFilter.tex, logical.w, logical.h, ow, oh);
+  } else {
+    // 4x: filter to an intermediate 2x texture, then filter that again.
+    const mw = logical.w * 2, mh = logical.h * 2;
+    if (glFilter.midW !== mw || glFilter.midH !== mh) {
+      gl.bindTexture(gl.TEXTURE_2D, glFilter.midTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, mw, mh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      glFilter.midW = mw;
+      glFilter.midH = mh;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glFilter.fbo);
+    runFilterPass(activeGpuFilter.prog, glFilter.tex, logical.w, logical.h, mw, mh);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    runFilterPass(activeGpuFilter.prog, glFilter.midTex, mw, mh, ow, oh);
+  }
 }
 requestAnimationFrame(gpuFilterFrame);
 
@@ -2907,7 +2983,10 @@ if failed:
     print("Some titles failed: %s. The page will say so per title;" % ", ".join(failed))
     print("re-run install.sh to retry just the missing ones.")
 PACKEOF
-  log "Freeware pack step finished (files in $BUILD_DIR/freeware/)."
+  log "Freeware pack step finished."
+  echo ""
+  echo "  Downloaded game files are in:  $BUILD_DIR/freeware/"
+  echo ""
 else
   log "Freeware game pack skipped."
 fi
@@ -2959,6 +3038,52 @@ log "Build complete."
 echo ""
 echo "  $BUILD_DIR/doomgeneric.js   (engine, with the .wasm embedded inside)"
 echo "  $BUILD_DIR/index.html       (the page you open to play)"
+if [ -d "$BUILD_DIR/freeware" ]; then
+  echo "  $BUILD_DIR/freeware/        (the downloaded free games)"
+fi
 echo ""
 echo "Open index.html directly in a browser (double-click it, or drag it into a"
 echo "tab). No web server required."
+
+# ---------------------------------------------------------------------------
+# 7. Optional: package everything for a web server
+# ---------------------------------------------------------------------------
+# Collects the page, the engine, and the freeware pack (if present) into one
+# folder plus a tarball, ready to upload to any static web host. Everything
+# the page references is a RELATIVE path, so it works under any domain,
+# subdomain, or subdirectory with zero configuration.
+# Control with SITE=1 (package) or SITE=0 (skip); unset asks when a
+# terminal is available.
+if [ -z "${SITE:-}" ]; then
+  if [ -t 0 ]; then
+    read -r -p "Package everything into a ready-to-upload website folder? [y/N]: " SITE_ANS
+    case "${SITE_ANS:-N}" in
+      [Yy]*) SITE=1 ;;
+      *)     SITE=0 ;;
+    esac
+  else
+    SITE=0
+  fi
+fi
+
+if [ "$SITE" = "1" ]; then
+  log "Packaging the website folder..."
+  SITE_DIR="$BUILD_DIR/site"
+  rm -rf "$SITE_DIR"
+  mkdir -p "$SITE_DIR"
+  cp "$BUILD_DIR/index.html" "$BUILD_DIR/doomgeneric.js" "$SITE_DIR/"
+  if [ -d "$BUILD_DIR/freeware" ]; then
+    cp -r "$BUILD_DIR/freeware" "$SITE_DIR/freeware"
+  fi
+  tar -czf "$BUILD_DIR/doom-site.tar.gz" -C "$SITE_DIR" .
+  echo ""
+  echo "  Website folder:  $SITE_DIR/"
+  echo "  Tarball:         $BUILD_DIR/doom-site.tar.gz"
+  echo ""
+  echo "Upload the folder's CONTENTS (or extract the tarball) anywhere a web"
+  echo "server can serve static files. All paths are relative, so it works on"
+  echo "any domain name, any subfolder, no configuration. To try it locally:"
+  echo ""
+  echo "  cd \"$SITE_DIR\" && python3 -m http.server 8000"
+  echo "  then open http://localhost:8000/"
+fi
