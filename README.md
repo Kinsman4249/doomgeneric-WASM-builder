@@ -25,6 +25,9 @@ What you get:
    the 3D world is rendered without editing anything.
 7. An FPS counter, read from a frame counter inside the engine itself and
    toggleable from the in-game bar.
+8. Doom-plus style limit removal: vanilla's 1994-sized static arrays are
+   enlarged 8x-32x so slaughter-grade maps (huge monster counts, complex
+   geometry) stop crashing, without changing gameplay behavior.
 
 ## How the build is organized
 
@@ -226,6 +229,17 @@ Two vanilla-engine caveats:
    floor textures may not display those replacements. Map and level PWADs
    work as expected.
 
+One more format caveat that limit removal does NOT change: this engine only
+understands VANILLA map behavior. Many modern community WADs (including
+most slaughter megawads such as Cleanout) are built in the Boom format and
+need a Boom-compatible port. On this engine, Boom-only switch and walk
+triggers silently do nothing (breaking progression), stepping into a sector
+with a Boom-only sector type stops the game with "P_PlayerInSpecialSector:
+unknown special", and DEHACKED lumps are ignored entirely (there is no
+DEHACKED support compiled in). Pick WADs whose readme says vanilla,
+limit-removing, or complevel 2/3; "Boom" or "complevel 9" WADs are out of
+scope for this engine.
+
 You can also set all of these on the setup screen before you start. Changing
 a control takes effect immediately, so you can compare presets live. While
 the mouse is captured by the game, press Esc first to free it, adjust the
@@ -310,6 +324,37 @@ script runs. What the patch does, file by file:
 4. `r_things.c`: the weapon sprite would ride up and down with the sheared
    view; a compensation term holds it steady on screen (weapon bob still
    works).
+5. Static limit removal, Doom-plus style, across several files. Vanilla
+   Doom sized its arrays for 1994 maps; slaughter-grade community maps
+   overflow them, which either crashes with an engine error or silently
+   corrupts memory. Every change is a pure `#define` size bump (no code
+   path changes, so gameplay and demo behavior stay identical), and
+   Chocolate Doom's vanilla-overrun emulations (SpechitOverrun,
+   InterceptsOverrun) are deliberately left untouched. The values:
+
+   - `MAXVISPLANES` 128 to 4096 (`r_plane.c`): the classic slaughter crash,
+     "R_FindPlane: no more visplanes".
+   - `MAXOPENINGS` x8 (`r_plane.c`): clip-window buffer, unchecked write,
+     overflow corrupts memory.
+   - `MAXDRAWSEGS` 256 to 4096 (`r_defs.h`): overflow silently drops
+     distant walls rather than crashing.
+   - `MAXVISSPRITES` 128 to 2048 (`r_things.h`): overflow silently stops
+     drawing monsters, which defeats slaughter testing.
+   - `MAXSPECIALCROSS` 20 to 512 (`p_local.h`): the famous spechit
+     overflow; the write has no bounds check, so exceeding it corrupts
+     memory.
+   - `MAXINTERCEPTS` plus 2048 slots (`p_local.h`): same class, triggered
+     by BFG and hitscan traces through dense hordes.
+   - `MAXPLATS` and `MAXCEILINGS` 30 to 512 (`p_spec.h`): overflow is a
+     "no more plats!" crash and silently stuck ceilings respectively.
+   - `MAXBUTTONS` 16 to 256 (`p_spec.h`): overflow is a "no button slots
+     left!" crash.
+   - `MAXLINEANIMS` 64 to 1024 (`p_spec.c`): lets big maps animate all
+     their scrolling walls (this tree caps gracefully rather than
+     crashing).
+   - `SAVEGAMESIZE` x16 (`g_game.c`): saves are stream based here, but the
+     vanilla size cap is still emulated with a "Savegame buffer overrun"
+     error; the cap is raised 16x, Doom-plus style.
 
 The engine source is pinned to a specific upstream commit (see
 `DOOMGENERIC_COMMIT` in `install.sh`) so the patch always has the exact
@@ -504,6 +549,17 @@ the crash and the game now runs.
     present in `p_sight.c`. See "About the Carmack notes and 3D
     acceleration".
 
+### Static limit removal (same day, round four)
+
+27. All of vanilla's map-complexity limits enlarged Doom-plus style, 8x to
+    32x: visplanes, openings, drawsegs, vissprites, spechit, intercepts,
+    plats, ceilings, buttons, line animations, and the emulated savegame
+    size cap. Pure size bumps, no behavior changes, overrun emulations
+    untouched. See item 5 under "What is patched in the engine source" for
+    every value.
+28. Documented that Boom-format WADs remain out of scope: limit removal
+    fixes overflow crashes, not missing Boom features.
+
 ## Legal note
 
 The doomgeneric engine source, and the underlying Doom engine, is GPL licensed
@@ -577,6 +633,21 @@ legally own, or the freely distributable shareware `doom1.wad`.
 
 12. A PWAD loads but replaced sprites or floor textures look unchanged.
     Vanilla WAD loading limitation; see "Loading PWADs (mods)".
+
+15. Crashes that the limit removal fixed, for reference when testing. If a
+    build BEFORE the limit patch died on a big map, the red error box or
+    console showed one of these: "R_FindPlane: no more visplanes" (the
+    classic one), "P_AddActivePlat: no more plats!", "P_StartButton: no
+    button slots left!", or "Savegame buffer overrun" when saving. Spechit
+    and intercepts overflows had no message at all, just corruption or a
+    random crash during heavy movement or BFG shots. If you see any of
+    these on a current build, rebuild and check the build stamp date; if it
+    persists on a fresh build, open an issue with the map name.
+
+16. A big map dies with "P_PlayerInSpecialSector: unknown special" or its
+    switches and doors simply do nothing. That is a Boom-format map, which
+    this vanilla engine does not support; no limit setting fixes that. See
+    the format caveat under "Loading PWADs (mods)".
 
 13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game

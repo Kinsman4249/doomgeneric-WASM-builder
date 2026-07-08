@@ -273,7 +273,7 @@ log "Resetting doomgeneric source to pinned commit ${DOOMGENERIC_COMMIT:0:7}..."
 git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 
 # ---------------------------------------------------------------------------
-# 3.5 Engine patches: mouse look and frame counter
+# 3.5 Engine patches: mouse look, frame counter, limit removal
 # ---------------------------------------------------------------------------
 # The stock engine has no mouse support in its browser port, and vanilla Doom
 # cannot look up and down at all. These patches add:
@@ -287,8 +287,14 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #   - strafe key codes for , and . so the page can put strafing on A and D,
 #   - mouse motion accumulation between game tics, so fast mouse movement is
 #     not dropped (frames run faster than Doom's 35 Hz game logic),
-#   - a rendered-frame counter the page reads to display an FPS counter.
-log "Writing engine patch (mouse look, frame counter)..."
+#   - a rendered-frame counter the page reads to display an FPS counter,
+#   - Doom-plus style static limit removal: vanilla arrays sized for 1994
+#     maps (visplanes, drawsegs, openings, vissprites, spechit, intercepts,
+#     plats, ceilings, buttons, line animations, savegame size) are enlarged
+#     8x-32x so slaughter-grade maps stop crashing or corrupting memory.
+#     Pure size bumps: no code paths change, gameplay stays identical, and
+#     Chocolate Doom overrun EMULATIONS stay untouched.
+log "Writing engine patch (mouse look, frame counter, limit removal)..."
 cat > wasm-builder-engine.patch << 'PATCH_EOF'
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
 index 7076dd2..80e54cf 100644
@@ -408,10 +414,22 @@ index 7076dd2..80e54cf 100644
  
  void DG_SleepMs(uint32_t ms)
 diff --git a/doomgeneric/g_game.c b/doomgeneric/g_game.c
-index 9954d78..ea47f2f 100644
+index 9954d78..8a7fdae 100644
 --- a/doomgeneric/g_game.c
 +++ b/doomgeneric/g_game.c
-@@ -205,6 +205,12 @@ static boolean *mousebuttons = &mousearray[1];  // allow [-1]
+@@ -73,7 +73,10 @@
+ #include "g_game.h"
+ 
+ 
+-#define SAVEGAMESIZE	0x2c000
++// [WASM-builder limits] Vanilla: 0x2c000 (180224). Saves here are stream
++// based, but the vanilla size limit is still emulated with an I_Error
++// ("Savegame buffer overrun") past this size. x16, Doom-plus style.
++#define SAVEGAMESIZE	(0x2c000 * 16)
+ 
+ void	G_ReadDemoTiccmd (ticcmd_t* cmd); 
+ void	G_WriteDemoTiccmd (ticcmd_t* cmd); 
+@@ -205,6 +208,12 @@ static boolean *mousebuttons = &mousearray[1];  // allow [-1]
  int             mousex;
  int             mousey;         
  
@@ -424,7 +442,7 @@ index 9954d78..ea47f2f 100644
  static int      dclicktime;
  static boolean  dclickstate;
  static int      dclicks; 
-@@ -534,7 +540,14 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
+@@ -534,7 +543,14 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
          } 
      }
  
@@ -440,7 +458,7 @@ index 9954d78..ea47f2f 100644
  
      if (strafe) 
  	side += mousex*2; 
-@@ -662,6 +675,7 @@ void G_DoLoadLevel (void)
+@@ -662,6 +678,7 @@ void G_DoLoadLevel (void)
      memset (gamekeydown, 0, sizeof(gamekeydown));
      joyxmove = joyymove = joystrafemove = 0;
      mousex = mousey = 0;
@@ -448,7 +466,7 @@ index 9954d78..ea47f2f 100644
      sendpause = sendsave = paused = false;
      memset(mousearray, 0, sizeof(mousearray));
      memset(joyarray, 0, sizeof(joyarray));
-@@ -827,8 +841,11 @@ boolean G_Responder (event_t* ev)
+@@ -827,8 +844,11 @@ boolean G_Responder (event_t* ev)
  		 
        case ev_mouse: 
          SetMouseButtons(ev->data1);
@@ -462,6 +480,102 @@ index 9954d78..ea47f2f 100644
  	return true;    // eat events 
   
        case ev_joystick: 
+diff --git a/doomgeneric/p_local.h b/doomgeneric/p_local.h
+index 95fa405..9830b00 100644
+--- a/doomgeneric/p_local.h
++++ b/doomgeneric/p_local.h
+@@ -152,7 +152,10 @@ typedef struct
+ // Extended MAXINTERCEPTS, to allow for intercepts overrun emulation.
+ 
+ #define MAXINTERCEPTS_ORIGINAL 128
+-#define MAXINTERCEPTS          (MAXINTERCEPTS_ORIGINAL + 61)
++// [WASM-builder limits] Chocolate: ORIGINAL + 61 (the 61 exists for the
++// intercepts-overrun emulation, which is untouched). Extra headroom so
++// BFG shots through slaughter hordes cannot write past the array.
++#define MAXINTERCEPTS          (MAXINTERCEPTS_ORIGINAL + 61 + 2048)
+ 
+ extern intercept_t	intercepts[MAXINTERCEPTS];
+ extern intercept_t*	intercept_p;
+@@ -216,7 +219,11 @@ extern	line_t*		ceilingline;
+ // We keep the original limit, to detect what variables in memory were
+ // overwritten (see SpechitOverrun())
+ 
+-#define MAXSPECIALCROSS 		20
++// [WASM-builder limits] Chocolate: 20. The write into spechit[] has no
++// bounds check, so exceeding this corrupts memory. The vanilla overrun
++// EMULATION (SpechitOverrun, keyed to MAXSPECIALCROSS_ORIGINAL) is
++// untouched; only the real storage grows.
++#define MAXSPECIALCROSS 		512
+ #define MAXSPECIALCROSS_ORIGINAL	8
+ 
+ extern	line_t*	spechit[MAXSPECIALCROSS];
+diff --git a/doomgeneric/p_spec.c b/doomgeneric/p_spec.c
+index 17446b5..c96d047 100644
+--- a/doomgeneric/p_spec.c
++++ b/doomgeneric/p_spec.c
+@@ -133,7 +133,9 @@ anim_t*		lastanim;
+ //
+ //      Animating line specials
+ //
+-#define MAXLINEANIMS            64
++// [WASM-builder limits] Vanilla: 64. Chocolate caps instead of crashing;
++// raising the cap lets big maps animate all their scrolling walls. 16x.
++#define MAXLINEANIMS            1024
+ 
+ extern  short	numlinespecials;
+ extern  line_t*	linespeciallist[MAXLINEANIMS];
+diff --git a/doomgeneric/p_spec.h b/doomgeneric/p_spec.h
+index a1343bf..7af0669 100644
+--- a/doomgeneric/p_spec.h
++++ b/doomgeneric/p_spec.h
+@@ -238,7 +238,9 @@ typedef struct
+ #define MAXSWITCHES		50
+ 
+  // 4 players, 4 buttons each at once, max.
+-#define MAXBUTTONS		16
++// [WASM-builder limits] Vanilla: 16. Overflow is I_Error
++// "P_StartButton: no button slots left!". 16x.
++#define MAXBUTTONS		256
+ 
+  // 1 second, in ticks. 
+ #define BUTTONTIME      35             
+@@ -300,7 +302,9 @@ typedef struct
+ 
+ #define PLATWAIT		3
+ #define PLATSPEED		FRACUNIT
+-#define MAXPLATS		30
++// [WASM-builder limits] Vanilla: 30. Overflow is I_Error
++// "P_AddActivePlat: no more plats!". 512 covers slaughter maps.
++#define MAXPLATS		512
+ 
+ 
+ extern plat_t*	activeplats[MAXPLATS];
+@@ -512,7 +516,9 @@ typedef struct
+ 
+ #define CEILSPEED		FRACUNIT
+ #define CEILWAIT		150
+-#define MAXCEILINGS		30
++// [WASM-builder limits] Vanilla: 30. Overflow silently drops ceilings
++// (they become impossible to stop). 512 covers slaughter maps.
++#define MAXCEILINGS		512
+ 
+ extern ceiling_t*	activeceilings[MAXCEILINGS];
+ 
+diff --git a/doomgeneric/r_defs.h b/doomgeneric/r_defs.h
+index a64ac84..2d4b8f7 100644
+--- a/doomgeneric/r_defs.h
++++ b/doomgeneric/r_defs.h
+@@ -48,7 +48,9 @@
+ #define SIL_TOP			2
+ #define SIL_BOTH		3
+ 
+-#define MAXDRAWSEGS		256
++// [WASM-builder limits] Vanilla: 256. Overflow does not crash, it makes
++// distant walls silently vanish in complex scenes. 16x.
++#define MAXDRAWSEGS		4096
+ 
+ 
+ 
 diff --git a/doomgeneric/r_main.c b/doomgeneric/r_main.c
 index 22278fe..4d09815 100644
 --- a/doomgeneric/r_main.c
@@ -524,6 +638,31 @@ index 22278fe..4d09815 100644
      framecount++;
      validcount++;
  }
+diff --git a/doomgeneric/r_plane.c b/doomgeneric/r_plane.c
+index ea1611c..f02763b 100644
+--- a/doomgeneric/r_plane.c
++++ b/doomgeneric/r_plane.c
+@@ -42,14 +42,18 @@ planefunction_t		ceilingfunc;
+ //
+ 
+ // Here comes the obnoxious "visplane".
+-#define MAXVISPLANES	128
++// [WASM-builder limits] Vanilla: 128. The classic slaughter-map killer:
++// I_Error "R_FindPlane: no more visplanes". 32x.
++#define MAXVISPLANES	4096
+ visplane_t		visplanes[MAXVISPLANES];
+ visplane_t*		lastvisplane;
+ visplane_t*		floorplane;
+ visplane_t*		ceilingplane;
+ 
+ // ?
+-#define MAXOPENINGS	SCREENWIDTH*64
++// [WASM-builder limits] Vanilla: SCREENWIDTH*64. Complex scenes need
++// more clip-window openings; overflow here corrupts memory. x8.
++#define MAXOPENINGS	SCREENWIDTH*64*8
+ short			openings[MAXOPENINGS];
+ short*			lastopening;
+ 
 diff --git a/doomgeneric/r_things.c b/doomgeneric/r_things.c
 index 74e7369..c2cfed1 100644
 --- a/doomgeneric/r_things.c
@@ -544,6 +683,22 @@ index 74e7369..c2cfed1 100644
      vis->x1 = x1 < 0 ? 0 : x1;
      vis->x2 = x2 >= viewwidth ? viewwidth-1 : x2;	
      vis->scale = pspritescale<<detailshift;
+diff --git a/doomgeneric/r_things.h b/doomgeneric/r_things.h
+index 256a5eb..9a1c951 100644
+--- a/doomgeneric/r_things.h
++++ b/doomgeneric/r_things.h
+@@ -22,7 +22,10 @@
+ 
+ 
+ 
+-#define MAXVISSPRITES  	128
++// [WASM-builder limits] Vanilla: 128. Overflow does not crash (a dummy
++// overflow sprite is returned) but monsters beyond the limit are not
++// drawn, which defeats slaughter-map testing. 16x.
++#define MAXVISSPRITES  	2048
+ 
+ extern vissprite_t	vissprites[MAXVISSPRITES];
+ extern vissprite_t*	vissprite_p;
 PATCH_EOF
 
 log "Applying engine patch..."
