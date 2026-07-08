@@ -7,8 +7,9 @@ WebAssembly file that runs entirely inside your browser.
 What you get:
 
 1. No web server needed. Open `index.html` directly using a `file://` URL.
-2. Load any WAD at runtime through a file picker in the page. Nothing is baked
-   into the build and nothing is uploaded anywhere.
+2. Load any WAD at runtime through a file picker in the page, plus optional
+   PWADs (mods and maps) on top. Nothing is baked into the build and nothing
+   is uploaded anywhere.
 3. In-browser key remapping, in addition to Doom's own in-game
    Options, Customize Controls menu.
 4. Window scaling with pixel-filter presets. The game fills the browser window,
@@ -22,6 +23,8 @@ What you get:
    patched in the engine source").
 6. An interactive resolution menu when you build, so you can pick how sharply
    the 3D world is rendered without editing anything.
+7. An FPS counter, read from a frame counter inside the engine itself and
+   toggleable from the in-game bar.
 
 ## How the build is organized
 
@@ -113,7 +116,8 @@ window (see "Display" below).
 ## Playing
 
 1. Click "Load a WAD" and pick a `.wad` file. Use one you legally own, or the
-   freely redistributable shareware `doom1.wad`.
+   freely redistributable shareware `doom1.wad`. Optionally add PWADs (see
+   "Loading PWADs" below).
 2. Optionally edit the key bindings (see "Default controls" below) and the
    mouse sensitivity or invert setting.
 3. Optionally pick a pixel filter and aspect ratio. You can also change these
@@ -200,7 +204,27 @@ over it). It offers:
    - "Square pixels" displays the buffer without stretching.
 3. Sens X and Sens Y: horizontal (turning) and vertical (looking) mouse
    sensitivity, five steps each.
-4. Fullscreen: a button that toggles true fullscreen.
+4. FPS: shows or hides a frames-per-second readout in the top right corner.
+   The number comes from a counter inside the engine (incremented every
+   rendered frame, sampled once a second), not from a page-side guess. Note
+   that Doom's game logic always runs at its classic fixed 35 Hz; the FPS
+   number is how often the engine renders, which the browser drives.
+5. Fullscreen: a button that toggles true fullscreen.
+
+### Loading PWADs (mods)
+
+Next to the main WAD picker there is an optional picker for PWADs, add-on
+WAD files with extra maps or content. You can select several; they load on
+top of the main WAD in selection order using the engine's `-file` option.
+Two vanilla-engine caveats:
+
+1. PWADs need a full IWAD (registered, retail, Freedoom, and so on). The
+   shareware `doom1.wad` refuses add-on files by design; the engine stops
+   with an error saying so, which the page shows in its red error box.
+2. This engine uses the plain vanilla WAD loader (there is no `-merge`
+   support in doomgeneric's file set), so PWADs that replace sprites or
+   floor textures may not display those replacements. Map and level PWADs
+   work as expected.
 
 You can also set all of these on the setup screen before you start. Changing
 a control takes effect immediately, so you can compare presets live. While
@@ -248,9 +272,9 @@ server. The generated version in this repo changes the following:
 10. Uses Emscripten's plain JavaScript string decoder (`-s TEXTDECODER=0`)
     instead of the browser's TextDecoder, because some browsers refuse
     TextDecoder on memory that can grow, which crashes the game at startup.
-11. Exports the two mouse-bridge functions (`DG_EM_MouseMove` and
-    `DG_EM_MouseButtons`) alongside `main`, so the page can feed captured
-    mouse input into the engine.
+11. Exports the page-facing engine functions alongside `main`: the two
+    mouse-bridge calls (`DG_EM_MouseMove`, `DG_EM_MouseButtons`) and the
+    frame-counter getter (`DG_EM_GetFrameCount`) behind the FPS display.
 
 No backup file is needed anymore: the script resets the source to the pinned
 upstream commit with git before writing this file, every run.
@@ -269,7 +293,9 @@ script runs. What the patch does, file by file:
    and button state; the bridge accumulates them and posts one standard Doom
    mouse event per rendered frame. Also maps the Comma and Period keys to
    Doom's dedicated strafe key codes (the classic keyboard layout strafed on
-   `,` and `.`), which is what the page's A and D bindings ride on.
+   `,` and `.`), which is what the page's A and D bindings ride on. Also
+   counts rendered frames and exports a getter, which is what the page's
+   FPS display reads.
 2. `g_game.c`: vertical mouse motion now drives a new pitch variable
    (`lookdir`) instead of walking the player forward and back, which is what
    original Doom did with it. Mouse motion between game tics is accumulated
@@ -288,8 +314,48 @@ script runs. What the patch does, file by file:
 The engine source is pinned to a specific upstream commit (see
 `DOOMGENERIC_COMMIT` in `install.sh`) so the patch always has the exact
 context it was written against. After every build, the script verifies that
-the two bridge functions actually got exported and stops with a clear error
-if not.
+the page-facing engine functions actually got exported and stops with a
+clear error if not.
+
+## About the Carmack notes and 3D acceleration
+
+John Carmack's notes from the 1997 Doom source release describe several
+things he would improve. Here is an honest accounting of where each stands
+in this project.
+
+1. "Replacing the line of sight test with a bsp line clip." Already done, in
+   the code itself. The released linuxdoom source this engine descends from
+   checks sight by clipping the sight line through the BSP tree: see
+   `P_CheckSight` in `p_sight.c`, which does a trivial rejection against the
+   REJECT table and then walks the tree with `P_CrossBSPNode` and
+   `P_CrossSubsector`. There is nothing left to apply from that note.
+
+2. The movement clipping half of the same note (`P_TryMove` and friends in
+   `p_map.c`, which use the blockmap) is still the original code, and this
+   project leaves it that way on purpose. Movement clipping IS the game
+   physics: changing it changes how the game plays, including quirks like
+   wallrunning that are part of Doom's identity and demo compatibility. At
+   this game's scale there is no performance problem to buy with that risk.
+
+3. "Collapsing walls, floors, and sprites into a single front-to-back walk
+   of the BSP tree." This is a ground-up renderer redesign, not a patch: it
+   means treating floors and ceilings as polygons, clipping sprite
+   billboards into subsector fragments, and rewriting the visibility logic
+   around all three. It is roughly what later engines did with years of
+   work. A patch-based builder like this one has no responsible way to ship
+   that, and at 640x400 in WebAssembly the payoff would be small: use the
+   FPS counter and you will see the renderer is not the bottleneck.
+
+4. "3D acceleration." True hardware rendering means replacing the software
+   renderer entirely with a GPU one (what GLDoom and GZDoom are). That is a
+   different engine, not a patch to this one. What this build already does
+   with the GPU: the finished frame is presented through SDL's accelerated
+   renderer (WebGL under Emscripten), and the browser scales the canvas to
+   your window on the compositor. In other words, the drawing of the 1993
+   frame is CPU (faithfully so, that is the point of doomgeneric), and
+   everything after that is GPU. If you want a hardware-rendered Doom,
+   GZDoom is the right tool; this project's goal is the original renderer,
+   running anywhere, with quality-of-life additions around it.
 
 ## Why the toolchain is pinned
 
@@ -424,6 +490,20 @@ the crash and the game now runs.
     The click that captures the mouse never fires a shot, because buttons
     only reach the game while the mouse is captured.
 
+### FPS counter and PWAD loader (same day, round three)
+
+23. FPS counter: the engine patch counts rendered frames and exports a
+    getter; the page samples it once a second and shows the number in the
+    top right corner, toggleable from the in-game bar.
+24. PWAD loader: an optional multi-file picker loads add-on WADs on top of
+    the main WAD with the engine's `-file` option, in selection order. See
+    "Loading PWADs (mods)" for the vanilla-engine caveats.
+25. The post-build verification now also checks the FPS counter export.
+26. Documented where the Carmack source-release notes stand in this
+    codebase, including that the BSP sight check they suggest is already
+    present in `p_sight.c`. See "About the Carmack notes and 3D
+    acceleration".
+
 ## Legal note
 
 The doomgeneric engine source, and the underlying Doom engine, is GPL licensed
@@ -489,7 +569,16 @@ legally own, or the freely distributable shareware `doom1.wad`.
     press and release both mouse buttons once, and please open an issue
     with your browser name and version.
 
-11. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
+11. The red error box says something like "You cannot -file with the
+    shareware version" right after starting with PWADs selected. That is
+    the engine itself refusing: add-on files require a full IWAD
+    (registered, retail, or Freedoom), not the shareware `doom1.wad`.
+    Reload and start again with a full IWAD, or without PWADs.
+
+12. A PWAD loads but replaced sprites or floor textures look unchanged.
+    Vanilla WAD loading limitation; see "Loading PWADs (mods)".
+
+13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game
     never starts. The build was made with a too-new Emscripten toolchain
     whose runtime some browsers reject. Pull the latest version of this repo,
@@ -509,7 +598,7 @@ legally own, or the freely distributable shareware `doom1.wad`.
     - Close the game's browser tab completely and open `index.html` again. A
       plain reload can serve a cached copy on `file://` pages.
 
-12. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as
+14. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as
     unique security origins` in the console. Same cause and same fix as the
     previous entry: a too-new runtime attempted a network style load, which
     browsers do not allow on `file://` pages. The pinned toolchain embeds

@@ -273,7 +273,7 @@ log "Resetting doomgeneric source to pinned commit ${DOOMGENERIC_COMMIT:0:7}..."
 git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 
 # ---------------------------------------------------------------------------
-# 3.5 Engine patches: mouse look
+# 3.5 Engine patches: mouse look and frame counter
 # ---------------------------------------------------------------------------
 # The stock engine has no mouse support in its browser port, and vanilla Doom
 # cannot look up and down at all. These patches add:
@@ -286,11 +286,12 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #     weapon sprite held steady on screen while the view shears,
 #   - strafe key codes for , and . so the page can put strafing on A and D,
 #   - mouse motion accumulation between game tics, so fast mouse movement is
-#     not dropped (frames run faster than Doom's 35 Hz game logic).
-log "Writing engine patch (mouse look)..."
-cat > wasm-builder-mouselook.patch << 'PATCH_EOF'
+#     not dropped (frames run faster than Doom's 35 Hz game logic),
+#   - a rendered-frame counter the page reads to display an FPS counter.
+log "Writing engine patch (mouse look, frame counter)..."
+cat > wasm-builder-engine.patch << 'PATCH_EOF'
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
-index 7076dd2..9e56980 100644
+index 7076dd2..80e54cf 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
 +++ b/doomgeneric/doomgeneric_emscripten.c
 @@ -3,6 +3,7 @@
@@ -317,7 +318,7 @@ index 7076dd2..9e56980 100644
      default:
        key = tolower(key);
        break;
-@@ -139,6 +149,63 @@ static void handleKeyInput()
+@@ -139,6 +149,78 @@ static void handleKeyInput()
  }
  
  
@@ -378,12 +379,29 @@ index 7076dd2..9e56980 100644
 +  s_MouseDirty = 0;
 +}
 +
++// ---------------------------------------------------------------------------
++// [WASM-builder] Rendered-frame counter.
++// DG_DrawFrame increments this once per rendered frame; the page reads it
++// through the exported getter (about once a second) to show an FPS counter.
++// A plain int is fine here: the page's JavaScript and the game run on the
++// same thread, so there is no race.
++// ---------------------------------------------------------------------------
++
++static int s_FrameCount = 0;
++
++EMSCRIPTEN_KEEPALIVE int DG_EM_GetFrameCount(void)
++{
++  return s_FrameCount;
++}
++
  void DG_Init()
  {
    window = SDL_CreateWindow("DOOM",
-@@ -168,6 +235,7 @@ void DG_DrawFrame()
+@@ -167,7 +249,9 @@ void DG_DrawFrame()
+   SDL_RenderCopy(renderer, texture, NULL, NULL);
    SDL_RenderPresent(renderer);
  
++  s_FrameCount++;       // [WASM-builder] one more rendered frame (FPS counter)
    handleKeyInput();
 +  flushMouseEvents();   // [WASM-builder] deliver this frame's mouse input
  }
@@ -529,7 +547,7 @@ index 74e7369..c2cfed1 100644
 PATCH_EOF
 
 log "Applying engine patch..."
-patch -p1 < wasm-builder-mouselook.patch
+patch -p1 < wasm-builder-engine.patch
 
 # All of the buildable C sources live in the inner "doomgeneric" folder.
 BUILD_DIR="$DOOMGENERIC_DIR/doomgeneric"
@@ -635,7 +653,7 @@ LDFLAGS += $(SDL_FLAGS) \
 	-s MODULARIZE=1 \
 	-s EXPORT_NAME="DoomModule" \
 	-s EXPORTED_RUNTIME_METHODS=['callMain','FS'] \
-	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons'] \
+	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons','_DG_EM_GetFrameCount'] \
 	-s INVOKE_RUN=0
 
 # Standard C math and C libraries.
@@ -767,6 +785,22 @@ cat > index.html << 'HTML_EOF'
   /* "Smooth" preset: the browser's default smoothing (bilinear) => softer. */
   #canvas.smooth { image-rendering: auto; }
 
+  /* FPS readout, top-right corner. Shown while the HUD's FPS box is
+     checked. The number is rendered frames per second, sampled once a
+     second from a counter inside the engine itself. */
+  #fpsbox {
+    display: none;               /* toggled from JavaScript */
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    z-index: 10;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #8f8;
+    font-size: 13px;
+  }
+
   /*
    * Mouse-capture hint: shown at the bottom of the stage while the game is
    * running but the mouse is not captured (pointer lock not active). Hidden
@@ -819,6 +853,16 @@ cat > index.html << 'HTML_EOF'
     Use a WAD you legally own, or the freely redistributable shareware
     <code>doom1.wad</code>. Nothing is uploaded anywhere; the file stays in
     your browser.
+  </p>
+  <p>
+    <label>Optional PWADs (mods, maps): <input type="file" id="pwadfiles" accept=".wad" multiple></label>
+  </p>
+  <p class="hint">
+    PWADs load on top of the main WAD (the engine's <code>-file</code>
+    option), in the order selected. They need a full IWAD: the shareware
+    <code>doom1.wad</code> refuses add-on files by design. This engine uses
+    the plain vanilla loader, so PWADs that replace sprites or floor
+    textures may not show those replacements.
   </p>
 
   <h3>2. Controls</h3>
@@ -951,8 +995,12 @@ cat > index.html << 'HTML_EOF'
         <option value="3">Very high</option>
       </select>
     </label>
+    <label><input type="checkbox" id="fpsToggle" checked> FPS</label>
     <button id="fullscreenBtn" type="button">Fullscreen</button>
   </div>
+
+  <!-- FPS readout (top-right), fed by a frame counter inside the engine. -->
+  <div id="fpsbox">FPS: --</div>
 
   <!-- Shown while the game runs without the mouse captured. -->
   <div id="mousehint">Click the game to capture the mouse. Mouse looks around, mouse buttons shoot, Esc releases the mouse.</div>
@@ -1049,6 +1097,8 @@ const rawInput      = document.getElementById('rawInput');
 const invertLook    = document.getElementById('invertLook');
 const mousehint     = document.getElementById('mousehint');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
+const fpsToggle     = document.getElementById('fpsToggle');
+const fpsbox        = document.getElementById('fpsbox');
 const errbox        = document.getElementById('errbox');
 
 // Filled in once the engine has booted; the mouse handlers need it to call
@@ -1095,6 +1145,29 @@ document.getElementById('wadfile').addEventListener('change', function (e) {
     startBtn.disabled = false;
   };
   reader.readAsArrayBuffer(file);
+});
+
+// Optional PWADs (add-on mods and maps). Each selected file is read into
+// memory here and handed to the engine with the -file option at start.
+// Entries are indexed so the load order matches the selection order even
+// though the files finish reading at different times.
+let pwadData = [];   // array of { name, bytes }
+
+document.getElementById('pwadfiles').addEventListener('change', function (e) {
+  const files = Array.from(e.target.files || []);
+  pwadData = [];
+  files.forEach(function (file, index) {
+    const reader = new FileReader();
+    reader.onload = function (ev) {
+      pwadData[index] = {
+        // A simple, safe name for the virtual filesystem; the engine only
+        // cares about the WAD's contents, not its filename.
+        name: 'pwad_' + index + '.wad',
+        bytes: new Uint8Array(ev.target.result),
+      };
+    };
+    reader.readAsArrayBuffer(file);
+  });
 });
 
 /* =========================================================================
@@ -1304,6 +1377,39 @@ document.addEventListener('pointerlockchange', function () {
 });
 
 /* =========================================================================
+ * FPS counter
+ * -------------------------------------------------------------------------
+ * The engine increments a frame counter every time it renders (see the
+ * engine patch). Once a second we read that counter and show the difference
+ * as frames per second. Note what this measures: how often the engine
+ * RENDERS. Doom's game logic always runs at its classic fixed 35 Hz
+ * regardless; the render loop is driven by the browser and can run faster.
+ * ========================================================================= */
+
+let fpsLastFrames = 0;
+let fpsLastTime = 0;
+
+function updateFps() {
+  if (!doomModule || !gameStarted) return;
+  const now = performance.now();
+  const frames = doomModule._DG_EM_GetFrameCount();
+  if (fpsLastTime > 0 && now > fpsLastTime) {
+    const fps = (frames - fpsLastFrames) * 1000 / (now - fpsLastTime);
+    fpsbox.textContent = 'FPS: ' + Math.round(fps);
+  }
+  fpsLastFrames = frames;
+  fpsLastTime = now;
+}
+
+// The HUD checkbox shows and hides the readout (measurement itself is so
+// cheap that it simply keeps running either way).
+fpsToggle.addEventListener('change', function () {
+  fpsbox.style.display = (fpsToggle.checked && gameStarted) ? 'block' : 'none';
+  fpsToggle.blur();
+  if (gameStarted) canvas.focus();
+});
+
+/* =========================================================================
  * Display scaling and filtering
  * -------------------------------------------------------------------------
  * The engine renders into a fixed pixel buffer (canvas.width x canvas.height,
@@ -1429,11 +1535,28 @@ startBtn.addEventListener('click', function () {
     // Put the chosen WAD where the engine will look for it.
     Module.FS.writeFile('/doom1.wad', wadData);
 
+    // Write any PWADs in next to it and build the engine's command line:
+    // "-file a.wad b.wad" loads them on top of the IWAD, in order.
+    const wadArgs = ['-iwad', '/doom1.wad'];
+    const loadedPwads = pwadData.filter(function (p) { return p; });
+    if (loadedPwads.length > 0) {
+      wadArgs.push('-file');
+      loadedPwads.forEach(function (p) {
+        Module.FS.writeFile('/' + p.name, p.bytes);
+        wadArgs.push('/' + p.name);
+      });
+    }
+
     // From here on, intercept and remap keys, and let the mouse handlers
     // reach the engine's mouse bridge.
     doomModule = Module;
     gameStarted = true;
     updateMouseHint();
+
+    // FPS readout: visible if its HUD checkbox is ticked, sampled once a
+    // second from the engine's frame counter.
+    if (fpsToggle.checked) fpsbox.style.display = 'block';
+    setInterval(updateFps, 1000);
 
     // Size the canvas once before we start (the MutationObserver will refine it
     // as soon as the engine sets its real buffer size during callMain).
@@ -1444,7 +1567,7 @@ startBtn.addEventListener('click', function () {
     // throwing a sentinel value; that is expected, so we swallow it and log
     // anything unexpected.
     try {
-      Module.callMain(['-iwad', '/doom1.wad']);
+      Module.callMain(wadArgs);
     } catch (err) {
       const isUnwind = (err === 'unwind') || (err && err.message === 'unwind');
       if (!isUnwind) showFatalError(err);
@@ -1464,7 +1587,7 @@ HTML_EOF
 # variables are NOT expanded inside it; we substitute the placeholder here
 # instead. The stamp shows on the setup screen and in the browser console,
 # which makes stale-cache and forgot-to-rebuild problems obvious at a glance.
-BUILD_STAMP="emsdk ${EMSDK_VERSION}, doomgeneric ${DOOMGENERIC_COMMIT:0:7} with mouse look, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
+BUILD_STAMP="emsdk ${EMSDK_VERSION}, doomgeneric ${DOOMGENERIC_COMMIT:0:7} patched, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
 sed -i "s|__BUILD_INFO__|${BUILD_STAMP}|" index.html
 log "Stamped index.html: ${BUILD_STAMP}"
 
@@ -1499,14 +1622,15 @@ else
   log "Verified: doomgeneric.js uses the plain JS string decoder (as intended)."
 fi
 
-# Verify the mouse-look bridge got exported: the page calls these two
-# functions from JavaScript, so the build is broken for mouse input if the
-# linker dropped them.
+# Verify the page-facing engine exports made it into the build: the page
+# calls these from JavaScript, so mouse input and the FPS counter are broken
+# if the linker dropped any of them.
 if grep -q "_DG_EM_MouseMove" "$BUILD_DIR/doomgeneric.js" \
-   && grep -q "_DG_EM_MouseButtons" "$BUILD_DIR/doomgeneric.js"; then
-  log "Verified: mouse-look bridge functions are exported."
+   && grep -q "_DG_EM_MouseButtons" "$BUILD_DIR/doomgeneric.js" \
+   && grep -q "_DG_EM_GetFrameCount" "$BUILD_DIR/doomgeneric.js"; then
+  log "Verified: mouse bridge and FPS counter functions are exported."
 else
-  die "Mouse bridge functions missing from doomgeneric.js. The engine patch or EXPORTED_FUNCTIONS list did not take effect."
+  die "Engine exports missing from doomgeneric.js. The engine patch or EXPORTED_FUNCTIONS list did not take effect."
 fi
 
 log "Build complete."
