@@ -205,7 +205,9 @@ strings out of memory that can grow, which some browsers refuse. The second
 happens when a newer runtime attempts a network style load, which browsers
 block on `file://` pages. Pinning the toolchain avoids both, and it also makes
 builds reproducible: the same script always produces the same result instead
-of whatever happened to be released last week.
+of whatever happened to be released last week. Both errors were hit in the
+wild on this exact project, and rebuilding with the pinned toolchain resolved
+them.
 
 If you built with an older copy of this script (which used "latest"), pull the
 latest version of this repo and re-run `./install.sh`. SDK releases install
@@ -230,31 +232,54 @@ EMSDK_VERSION=4.0.10 ./install.sh
 If a much newer SDK rejects the `TEXTDECODER` setting, remove that flag from
 the Makefile section of `install.sh` and rebuild.
 
-## Fixes in this build compared with the earlier version
+## Fix history
 
-1. Key interception now activates based on whether the game has started, using
-   a simple `gameStarted` flag, instead of checking which element has focus.
+Everything below landed on 2026-07-08. The startup crash fixes are confirmed
+working: rebuilding with the pinned toolchain on an affected machine resolved
+the crash and the game now runs.
+
+### Input and build correctness (versus the original build)
+
+1. Key interception activates based on whether the game has started, using a
+   simple `gameStarted` flag, instead of checking which element has focus.
    The focus check was unreliable right after clicking Start, which let the
    browser eat arrow keys and Space and made bindings feel inconsistent.
 2. Use is `E` and Fire is `F` by default, and the remap reliably takes effect
    in game, so `E` triggers Use rather than Fire.
-3. `SDL2_MIXER_FORMATS` was moved from the compile flags to the link flags.
-4. `ALLOW_MEMORY_GROWTH` was added for larger WADs.
-5. Added window scaling with "Crisp" and "Smooth" pixel-filter presets, an
-   aspect-ratio choice, a fullscreen button, and an optional build-time
-   internal resolution setting.
-6. Pinned the Emscripten toolchain to a known-good release instead of
-   "latest", after a newer release produced builds that crashed at startup in
-   some browsers. See "Why the toolchain is pinned".
-7. If the engine fails to start, the page now shows a readable error box with
-   recovery steps instead of a silent black screen.
-8. The page wraps the browser's TextDecoder so that text read from growable
-   memory is copied into a fixed buffer first. This neutralizes the
-   "resizable ArrayBuffer" startup crash even if an engine build from an
-   incompatible toolchain slips through.
-9. The setup screen and the browser console show a build stamp (SDK version,
-   internal resolution, and build time), so a stale cached page or a
-   forgotten rebuild is easy to spot.
+3. `SDL2_MIXER_FORMATS` moved from the compile flags to the link flags, where
+   linker settings belong, so MIDI music support is actually wired in.
+4. `ALLOW_MEMORY_GROWTH` added so loading a large WAD at runtime does not run
+   out of memory.
+
+### Display
+
+5. Window scaling added: the game fills the browser window, with "Crisp" and
+   "Smooth" pixel-filter presets, a 4:3 or square-pixel aspect choice, a
+   fullscreen button, and live switching while playing.
+6. Optional build-time internal resolution setting added (`DOOM_RESX` and
+   `DOOM_RESY`), default 640x400.
+
+### Startup crash on newer toolchains
+
+7. Pinned the Emscripten toolchain to known-good release 3.1.64 instead of
+   "latest", after the newest release produced builds that crashed at startup
+   in some browsers with a TextDecoder error and a blocked `file://` load.
+   See "Why the toolchain is pinned".
+8. Added `-s TEXTDECODER=0` and `-s ENVIRONMENT=web` to the link flags to
+   remove the crashing code paths from the engine output entirely.
+9. The page wraps the browser's TextDecoder so text read from growable memory
+   is copied into a fixed buffer first. Even an engine build from an
+   incompatible toolchain cannot crash on the "resizable ArrayBuffer" error.
+
+### Diagnosability
+
+10. If the engine fails to start, the page shows a readable error box with
+    recovery steps instead of a silent black screen.
+11. The setup screen and the browser console show a build stamp (SDK version,
+    internal resolution, and build time), so a stale cached page or a
+    forgotten rebuild is easy to spot.
+12. After every build, `install.sh` checks the compiled `doomgeneric.js` for
+    leftover TextDecoder references and warns if any are found.
 
 ## Legal note
 
