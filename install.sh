@@ -297,7 +297,10 @@ git reset --hard --quiet "$DOOMGENERIC_COMMIT"
 #   - performance under overload: the tic catch-up loop is capped (an
 #     overloaded frame runs slow motion instead of freezing the tab)
 #     and the zone allocator default grows from 6 to 64 MiB,
-#   - DeHackEd support re-enabled: doomgeneric kept all of Chocolate
+#   - DeHackEd and WAD-merge (-merge) support re-enabled: doomgeneric
+#     kept the integration for both but fenced it off and deleted the
+#     implementations. See also the restore step below.
+#   - (DeHackEd detail) doomgeneric kept all of Chocolate
 #     Doom's DeHackEd integration but fenced it off and deleted the
 #     parser sources. The patch re-opens the integration points and
 #     turns the feature back on; the parser sources themselves are
@@ -403,17 +406,23 @@ index 9012e5f..86711fd 100644
      // Generate the WAD hash table.  Speed things up a bit.
      W_GenerateHashTable();
 diff --git a/doomgeneric/doomfeatures.h b/doomgeneric/doomfeatures.h
-index dff6936..b2e32ab 100644
+index dff6936..2a31f6f 100644
 --- a/doomgeneric/doomfeatures.h
 +++ b/doomgeneric/doomfeatures.h
-@@ -25,7 +25,10 @@
+@@ -21,11 +21,15 @@
+ 
+ // Enables wad merging (the '-merge' command line parameter)
+ 
+-#undef FEATURE_WAD_MERGE
++// [WASM-builder] WAD merging (-merge) enabled (w_merge.c restored by
++// install.sh). This is how total conversions load with their sprites
++// and flats intact on a vanilla engine.
++#define FEATURE_WAD_MERGE 1
  
  // Enables dehacked support ('-deh')
  
 -#undef FEATURE_DEHACKED
-+// [WASM-builder] DeHackEd support enabled: install.sh restores the
-+// parser implementation from Chocolate Doom 2.3.0 (this fork's exact
-+// ancestor), and the engine patch re-opens the integration points.
++// [WASM-builder] DeHackEd support enabled (parser restored by install.sh).
 +#define FEATURE_DEHACKED 1
  
  // Enables multiplayer support (network games)
@@ -885,7 +894,7 @@ patch -p1 < wasm-builder-engine.patch
 # remain in doomgeneric are byte-identical to that release), so the files
 # drop straight in. Pinned to a tag for reproducibility, cached like the
 # other clones, re-copied on every run so the result is always consistent.
-CHOCO_TAG="chocolate-doom-2.3.0"
+CHOCO_TAG="chocolate-doom-2.2.1"
 CHOCO_DIR="$DOOMGENERIC_DIR/chocolate-deh-src"
 if [ ! -d "$CHOCO_DIR" ]; then
   log "Fetching the DeHackEd implementation (Chocolate Doom $CHOCO_TAG)..."
@@ -895,26 +904,27 @@ else
   log "Chocolate Doom sources already fetched at $CHOCO_DIR."
 fi
 
-log "Installing DeHackEd parser sources into the engine..."
-# Shared parser core (the three deh headers already in doomgeneric are kept).
+log "Installing DeHackEd parser and WAD-merge sources into the engine..."
+# Shared parser core (the three deh headers already in doomgeneric are kept;
+# they match this release byte for byte, which is how the vintage was
+# confirmed). w_merge.c provides the -merge option: it loads total
+# conversion PWADs with their sprites and flats intact, something the plain
+# vanilla loader cannot do.
 cp "$CHOCO_DIR/src/deh_defs.h" "$CHOCO_DIR/src/deh_io.h" \
    "$CHOCO_DIR/src/deh_mapping.h" "$CHOCO_DIR/src/deh_io.c" \
    "$CHOCO_DIR/src/deh_main.c" "$CHOCO_DIR/src/deh_mapping.c" \
-   "$CHOCO_DIR/src/deh_str.c" "$CHOCO_DIR/src/deh_text.c" doomgeneric/
+   "$CHOCO_DIR/src/deh_str.c" "$CHOCO_DIR/src/deh_text.c" \
+   "$CHOCO_DIR/src/w_merge.c" doomgeneric/
 # Doom-specific section parsers (things, frames, weapons, ammo, cheats...).
 cp "$CHOCO_DIR"/src/doom/deh_*.c doomgeneric/
-
-# One-line adaptation: this engine's WAD directory is an array of structs,
-# while that Chocolate release used an array of pointers.
-sed -i 's/lumpinfo\[lumpnum\]->name/lumpinfo[lumpnum].name/' doomgeneric/deh_io.c
 
 # All of the buildable C sources live in the inner "doomgeneric" folder.
 BUILD_DIR="$DOOMGENERIC_DIR/doomgeneric"
 cd "$BUILD_DIR"
 
 # Sanity: the DeHackEd sources must be in place before the build.
-if [ ! -f deh_main.c ] || [ ! -f deh_defs.h ]; then
-  die "DeHackEd sources missing after the copy step. Check the Chocolate Doom clone at $CHOCO_DIR."
+if [ ! -f deh_main.c ] || [ ! -f deh_defs.h ] || [ ! -f w_merge.c ]; then
+  die "DeHackEd or WAD-merge sources missing after the copy step. Check the Chocolate Doom clone at $CHOCO_DIR."
 fi
 
 # ---------------------------------------------------------------------------
@@ -1048,7 +1058,7 @@ OUTPUT=doomgeneric
 # The full list of Doom engine object files to build: upstream doomgeneric's
 # emscripten object list (sound included), plus the DeHackEd parser sources
 # restored from Chocolate Doom (the deh_*.o entries at the end).
-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_emscripten.o mus2mid.o i_sdlmusic.o i_sdlsound.o deh_ammo.o deh_bexstr.o deh_cheat.o deh_doom.o deh_frame.o deh_io.o deh_main.o deh_mapping.o deh_misc.o deh_ptr.o deh_sound.o deh_str.o deh_text.o deh_thing.o deh_weapon.o
+SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_emscripten.o mus2mid.o i_sdlmusic.o i_sdlsound.o deh_ammo.o deh_bexstr.o deh_cheat.o deh_doom.o deh_frame.o deh_io.o deh_main.o deh_mapping.o deh_misc.o deh_ptr.o deh_sound.o deh_str.o deh_text.o deh_thing.o deh_weapon.o w_merge.o
 OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
 
 # Default target: build the game.
@@ -1179,6 +1189,21 @@ cat > index.html << 'HTML_EOF'
   /* "Smooth" preset: the browser's default smoothing (bilinear) => softer. */
   #canvas.smooth { image-rendering: auto; }
 
+  /*
+   * GPU filter output canvas. When an advanced filter (hq2x, xBR, DCCI) is
+   * active, the game canvas turns invisible (but keeps receiving clicks)
+   * and this canvas shows the filtered image in the exact same spot.
+   * pointer-events: none lets every click fall through to the game canvas.
+   */
+  #filtercanvas {
+    display: none;
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    image-rendering: auto;      /* final scale from 2x is smoothed */
+    background: #000;
+  }
+
   /* FPS readout, top-right corner. Shown while the HUD's FPS box is
      checked. The number is rendered frames per second, sampled once a
      second from a counter inside the engine itself. */
@@ -1272,6 +1297,18 @@ cat > index.html << 'HTML_EOF'
     here; its built-in patch loads by itself.
   </p>
 
+  <h3>Or pick a free game (no files needed)</h3>
+  <p class="hint">
+    One click loads a freely redistributable game from the pack that
+    <code>install.sh</code> downloaded next to this page (nothing leaves
+    your machine; each game is only held in memory while you play). Chex
+    Quest and Harmony run as total conversions over Freedoom, merged
+    properly so their graphics show. Loading a title replaces any manually
+    picked files above.
+  </p>
+  <p id="freegames"></p>
+  <p class="hint" id="freegamesStatus"></p>
+
   <h3>2. Controls</h3>
   <p class="hint">
     The mouse turns and looks up/down once you click the game to capture it
@@ -1302,6 +1339,9 @@ cat > index.html << 'HTML_EOF'
       <select id="filterMode">
         <option value="crisp" selected>Crisp (original pixels)</option>
         <option value="smooth">Smooth</option>
+        <option value="hq2x">hq2x (GPU)</option>
+        <option value="xbr">xBR (GPU)</option>
+        <option value="dcci">DCCI (GPU)</option>
       </select>
     </label>
     &nbsp;&nbsp;
@@ -1317,22 +1357,26 @@ cat > index.html << 'HTML_EOF'
     <label>
       Horizontal sensitivity:
       <select id="sensXMode">
+        <option value="0.25">Extra low</option>
         <option value="0.5">Low</option>
-        <option value="1" selected>Normal</option>
-        <option value="1.5">High</option>
+        <option value="1">Normal</option>
+        <option value="1.5" selected>High</option>
         <option value="2">Higher</option>
         <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
       </select>
     </label>
     &nbsp;&nbsp;
     <label>
       Vertical sensitivity:
       <select id="sensYMode">
-        <option value="0.5">Low</option>
-        <option value="1" selected>Normal</option>
+        <option value="0.25">Extra low</option>
+        <option value="0.5" selected>Low</option>
+        <option value="1">Normal</option>
         <option value="1.5">High</option>
         <option value="2">Higher</option>
         <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
       </select>
     </label>
   </p>
@@ -1379,6 +1423,9 @@ cat > index.html << 'HTML_EOF'
       <select id="filterModeHud">
         <option value="crisp">Crisp</option>
         <option value="smooth">Smooth</option>
+        <option value="hq2x">hq2x</option>
+        <option value="xbr">xBR</option>
+        <option value="dcci">DCCI</option>
       </select>
     </label>
     <label>Aspect:
@@ -1389,20 +1436,24 @@ cat > index.html << 'HTML_EOF'
     </label>
     <label>Sens X:
       <select id="sensXModeHud">
+        <option value="0.25">Extra low</option>
         <option value="0.5">Low</option>
         <option value="1">Normal</option>
-        <option value="1.5">High</option>
+        <option value="1.5" selected>High</option>
         <option value="2">Higher</option>
         <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
       </select>
     </label>
     <label>Sens Y:
       <select id="sensYModeHud">
-        <option value="0.5">Low</option>
+        <option value="0.25">Extra low</option>
+        <option value="0.5" selected>Low</option>
         <option value="1">Normal</option>
         <option value="1.5">High</option>
         <option value="2">Higher</option>
         <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
       </select>
     </label>
     <label><input type="checkbox" id="fpsToggle" checked> FPS</label>
@@ -1411,6 +1462,9 @@ cat > index.html << 'HTML_EOF'
 
   <!-- FPS readout (top-right), fed by a frame counter inside the engine. -->
   <div id="fpsbox">FPS: --</div>
+
+  <!-- Output canvas for the GPU pixel filters (hq2x, xBR, DCCI). -->
+  <canvas id="filtercanvas"></canvas>
 
   <!-- Shown while the game runs without the mouse captured. -->
   <div id="mousehint">Click the game to capture the mouse. Mouse looks around, mouse buttons shoot, Esc releases the mouse.</div>
@@ -1509,6 +1563,7 @@ const mousehint     = document.getElementById('mousehint');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
 const fpsToggle     = document.getElementById('fpsToggle');
 const fpsbox        = document.getElementById('fpsbox');
+const filtercanvas  = document.getElementById('filtercanvas');
 const errbox        = document.getElementById('errbox');
 
 // Filled in once the engine has booted; the mouse handlers need it to call
@@ -1733,6 +1788,106 @@ document.getElementById('dehfiles').addEventListener('change', function (e) {
     reader.readAsArrayBuffer(file);
   });
 });
+
+/* =========================================================================
+ * Free games (one-click loading from the local freeware pack)
+ * -------------------------------------------------------------------------
+ * install.sh optionally downloads freely redistributable games and packs
+ * each file as base64 inside freeware/<key>.js. Loading one here is just a
+ * script tag (which file:// allows), then decoding the base64 into bytes.
+ * Total conversions (Chex Quest, Harmony) ride on a Freedoom base WAD and
+ * are loaded through the engine's -merge option so their sprites and flats
+ * display properly, which plain -file cannot do on a vanilla engine.
+ * ========================================================================= */
+
+// Total-conversion WADs to pass via -merge, set by the buttons below.
+let mergeSpecs = [];   // array of { name, bytes }
+
+const FREEWARE_TITLES = [
+  { key: 'doom1',     label: 'Doom Shareware',    iwad: 'doom1' },
+  { key: 'freedoom1', label: 'Freedoom Phase 1',  iwad: 'freedoom1' },
+  { key: 'freedoom2', label: 'Freedoom Phase 2',  iwad: 'freedoom2' },
+  { key: 'hacx',      label: 'HACX 1.2',          iwad: 'hacx' },
+  { key: 'chex',      label: 'Chex Quest',        iwad: 'freedoom1', merge: ['chextc'], deh: ['chex_deh'] },
+  { key: 'chex2',     label: 'Chex Quest 2',      iwad: 'freedoom1', merge: ['chextc', 'newmaps'], deh: ['chex_deh'] },
+  { key: 'harmony',   label: 'Harmony',           iwad: 'freedoom2', merge: ['harmonyc'], deh: ['harmony_deh'] },
+];
+
+// Decode base64 into bytes (a few MB decodes in well under a second).
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Load one packed file by injecting its script tag; cached per key.
+const freewareCache = {};
+function loadFreewarePart(key) {
+  if (!freewareCache[key]) {
+    freewareCache[key] = new Promise(function (resolve, reject) {
+      const sc = document.createElement('script');
+      sc.src = 'freeware/' + key + '.js';
+      sc.onload = function () {
+        const entry = window.WASM_BUILDER_FREEWARE && window.WASM_BUILDER_FREEWARE[key];
+        if (!entry) { reject(new Error(key + ': pack file is malformed')); return; }
+        const bytes = b64ToBytes(entry.b64);
+        entry.b64 = null;   // free the big string
+        resolve({ name: entry.name, bytes: bytes });
+      };
+      sc.onerror = function () {
+        reject(new Error(key + ' is not in the local pack. Re-run ./install.sh and answer Y to the freeware pack.'));
+      };
+      document.head.appendChild(sc);
+    });
+  }
+  return freewareCache[key];
+}
+
+function selectFreewareTitle(title) {
+  const status = document.getElementById('freegamesStatus');
+  status.textContent = 'Loading ' + title.label + '...';
+  const keys = [title.iwad].concat(title.merge || []).concat(title.deh || []);
+  Promise.all(keys.map(loadFreewarePart)).then(function (parts) {
+    const iwadPart = parts[0];
+    const mergeParts = parts.slice(1, 1 + (title.merge ? title.merge.length : 0));
+    const dehParts = parts.slice(1 + (title.merge ? title.merge.length : 0));
+
+    // Apply exactly as if the user had picked these files by hand.
+    wadData = iwadPart.bytes;
+    iwadName = chooseIwadName(iwadPart.name, iwadPart.bytes);
+    wadIsShareware = engineWillTreatAsShareware(iwadName, iwadPart.bytes);
+    mergeSpecs = mergeParts.map(function (p) { return { name: p.name, bytes: p.bytes }; });
+    dehData = dehParts.map(function (p) { return { name: p.name, bytes: p.bytes }; });
+    pwadData = [];   // a fresh title stands alone; re-pick PWADs if wanted
+
+    let mb = 0;
+    parts.forEach(function (p) { mb += p.bytes.length; });
+    console.log('Free game loaded: ' + title.label + ' as ' + iwadName
+                + (mergeSpecs.length ? ' + merge: ' + mergeSpecs.map(function (p) { return p.name; }).join(', ') : '')
+                + (dehData.length ? ' + deh: ' + dehData.map(function (p) { return p.name; }).join(', ') : ''));
+    status.textContent = title.label + ' ready (' + (mb / 1048576).toFixed(1)
+                       + ' MB in memory). Press Start DOOM.';
+    updateSetupWarning();
+    startBtn.disabled = false;
+  }).catch(function (err) {
+    status.textContent = 'Could not load ' + title.label + ': ' + err.message;
+  });
+}
+
+// Build the buttons.
+(function () {
+  const holder = document.getElementById('freegames');
+  FREEWARE_TITLES.forEach(function (title) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = title.label;
+    b.style.marginRight = '8px';
+    b.style.marginBottom = '6px';
+    b.addEventListener('click', function () { selectFreewareTitle(title); });
+    holder.appendChild(b);
+  });
+})();
 
 /* =========================================================================
  * Key remapping
@@ -2007,10 +2162,28 @@ fpsToggle.addEventListener('change', function () {
  *   - Smooth = bilinear (image-rendering: auto)               = softened
  * ========================================================================= */
 
-// Apply the chosen pixel filter by toggling a CSS class on the canvas.
+// Apply the chosen pixel filter. Crisp and Smooth are plain CSS scaling
+// modes on the game canvas. The GPU modes (hq2x, xBR, DCCI) hide the game
+// canvas (it keeps receiving clicks) and show the filtered copy instead;
+// if WebGL is unavailable they quietly fall back to Smooth.
+let activeGpuFilter = null;   // 'hq2x' | 'xbr' | 'dcci' | null
+
 function setFilter(mode) {
+  const wantsGpu = (mode === 'hq2x' || mode === 'xbr' || mode === 'dcci');
   canvas.classList.remove('crisp', 'smooth');
-  canvas.classList.add(mode === 'smooth' ? 'smooth' : 'crisp');
+  if (wantsGpu && gpuFilterReady()) {
+    activeGpuFilter = mode;
+    canvas.style.opacity = '0';
+    filtercanvas.style.display = 'block';
+    canvas.classList.add('crisp');   // irrelevant while hidden, kept sane
+  } else {
+    if (wantsGpu) console.log('GPU filters unavailable here; using Smooth instead.');
+    activeGpuFilter = null;
+    canvas.style.opacity = '1';
+    filtercanvas.style.display = 'none';
+    canvas.classList.add((mode === 'smooth' || wantsGpu) ? 'smooth' : 'crisp');
+  }
+  applyScaling();
 }
 
 // Resize the canvas (via CSS) to fit the stage while keeping the chosen aspect
@@ -2047,6 +2220,16 @@ function applyScaling() {
 
   canvas.style.width  = dispW + 'px';
   canvas.style.height = dispH + 'px';
+
+  // Keep the GPU filter canvas glued to the exact same screen rectangle.
+  if (filtercanvas.style.display !== 'none') {
+    const r = canvas.getBoundingClientRect();
+    const st = stage.getBoundingClientRect();
+    filtercanvas.style.left = (r.left - st.left) + 'px';
+    filtercanvas.style.top = (r.top - st.top) + 'px';
+    filtercanvas.style.width = r.width + 'px';
+    filtercanvas.style.height = r.height + 'px';
+  }
 }
 
 // Keep the two copies of each control (setup screen and in-game HUD) in sync,
@@ -2094,6 +2277,247 @@ document.addEventListener('fullscreenchange', function () {
 // so the game is always sized correctly no matter the timing.
 const sizeObserver = new MutationObserver(applyScaling);
 sizeObserver.observe(canvas, { attributes: true, attributeFilter: ['width', 'height'] });
+
+/* =========================================================================
+ * GPU pixel filters: hq2x, xBR, and DCCI
+ * -------------------------------------------------------------------------
+ * Each frame, the game canvas is uploaded as a WebGL texture and redrawn at
+ * double resolution through the selected filter shader onto #filtercanvas;
+ * the browser then smooth-scales that 2x image to the window. All three are
+ * GPU adaptations of the classic algorithms:
+ *   hq2x - the widely used lookup-table-free shader formulation
+ *   xBR  - level 1 of Hyllian's edge-interpolating scaler
+ *   DCCI - directional cubic convolution, single-pass adaptation
+ * ========================================================================= */
+
+const FILTER_VERTEX_SRC = [
+  'attribute vec2 aPos;',
+  'varying vec2 vUv;',
+  'void main() {',
+  '  vUv = aPos * 0.5 + 0.5;',
+  '  gl_Position = vec4(aPos, 0.0, 1.0);',
+  '}',
+].join('\n');
+
+// Shared helpers prepended to every fragment shader.
+const FILTER_COMMON_SRC = [
+  'precision mediump float;',
+  'varying vec2 vUv;',
+  'uniform sampler2D uTex;',
+  'uniform vec2 uSrcSize;',
+  'vec3 tap(vec2 base, vec2 offs) {',
+  '  return texture2D(uTex, base + offs / uSrcSize).rgb;',
+  '}',
+  'float cdist(vec3 a, vec3 b) {',           // color distance, luma-weighted
+  '  vec3 w = vec3(0.299, 0.587, 0.114);',
+  '  return dot(abs(a - b), w * 3.0);',
+  '}',
+].join('\n');
+
+// hq2x, lookup-table-free formulation: for each output quadrant, look at the
+// two edge neighbors and the diagonal; when the neighbors match each other
+// but the diagonal breaks, an edge crosses this corner and the center is
+// pulled toward the neighbor pair (harder when the center matches neither).
+const FILTER_HQ2X_SRC = FILTER_COMMON_SRC + '\n' + [
+  'void main() {',
+  '  vec2 px = vUv * uSrcSize;',
+  '  vec2 f = fract(px) - 0.5;',
+  '  vec2 q = vec2(f.x >= 0.0 ? 1.0 : -1.0, f.y >= 0.0 ? 1.0 : -1.0);',
+  '  vec2 base = (floor(px) + 0.5) / uSrcSize;',
+  '  vec3 E = texture2D(uTex, base).rgb;',
+  '  vec3 A = tap(base, vec2(q.x, 0.0));',
+  '  vec3 B = tap(base, vec2(0.0, q.y));',
+  '  vec3 D = tap(base, q);',
+  '  vec3 res = E;',
+  '  bool ab = cdist(A, B) < 0.16;',
+  '  bool ed = cdist(E, D) < 0.16;',
+  '  if (ab && !ed) {',
+  '    bool near = (cdist(E, A) < 0.16) || (cdist(E, B) < 0.16);',
+  '    res = mix(E, 0.5 * (A + B), near ? 0.25 : 0.5);',
+  '  }',
+  '  gl_FragColor = vec4(res, 1.0);',
+  '}',
+].join('\n');
+
+// xBR level 1: detect whether an edge runs along this corner by comparing
+// weighted color distances of the two possible edge orientations; when it
+// does, blend the corner pixel toward whichever edge neighbor matches best.
+const FILTER_XBR_SRC = FILTER_COMMON_SRC + '\n' + [
+  'void main() {',
+  '  vec2 px = vUv * uSrcSize;',
+  '  vec2 f = fract(px) - 0.5;',
+  '  vec2 q = vec2(f.x >= 0.0 ? 1.0 : -1.0, f.y >= 0.0 ? 1.0 : -1.0);',
+  '  vec2 base = (floor(px) + 0.5) / uSrcSize;',
+  '  vec3 E  = texture2D(uTex, base).rgb;',
+  '  vec3 S1 = tap(base, vec2(q.x, 0.0));',       // edge neighbors
+  '  vec3 S2 = tap(base, vec2(0.0, q.y));',
+  '  vec3 D  = tap(base, q);',                    // diagonal
+  '  vec3 O1 = tap(base, vec2(-q.x, 0.0));',      // opposite side taps
+  '  vec3 O2 = tap(base, vec2(0.0, -q.y));',
+  '  vec3 D2 = tap(base, 2.0 * q);',              // far diagonal
+  '  vec3 Dop = tap(base, -q);',
+  // Edge along S1-S2 (cutting this corner) vs edge through E-D.
+  '  float wd1 = cdist(E, Dop) + cdist(D, D2) + 4.0 * cdist(S1, S2);',
+  '  float wd2 = 4.0 * cdist(E, D) + cdist(S1, O2) + cdist(S2, O1);',
+  '  vec3 res = E;',
+  '  if (wd1 < wd2) {',
+  // An edge cuts the corner: take the better-matching edge neighbor.
+  '    vec3 pick = (cdist(E, S1) <= cdist(E, S2)) ? S1 : S2;',
+  '    res = mix(E, pick, 0.5);',
+  '  }',
+  '  gl_FragColor = vec4(res, 1.0);',
+  '}',
+].join('\n');
+
+// DCCI, single-pass adaptation: original pixels copy through; new diagonal
+// pixels are cubic-interpolated along the weaker-gradient diagonal (or a
+// gradient-weighted blend when no direction dominates); new row/column
+// pixels do the same along the axes. Cubic weights are (-1, 9, 9, -1) / 16.
+const FILTER_DCCI_SRC = FILTER_COMMON_SRC + '\n' + [
+  'float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }',
+  'vec3 cubic4(vec3 a, vec3 b, vec3 c, vec3 d) {',
+  '  return clamp((-a + 9.0 * b + 9.0 * c - d) / 16.0, 0.0, 1.0);',
+  '}',
+  'void main() {',
+  '  vec2 opix = floor(vUv * uSrcSize * 2.0);',   // output pixel index
+  '  vec2 par = mod(opix, 2.0);',                 // parity within source cell
+  '  vec2 base = (floor(opix / 2.0) + 0.5) / uSrcSize;',
+  '  if (par.x < 0.5 && par.y < 0.5) {',          // original sample: copy
+  '    gl_FragColor = vec4(texture2D(uTex, base).rgb, 1.0);',
+  '    return;',
+  '  }',
+  '  vec3 res;',
+  '  if (par.x > 0.5 && par.y > 0.5) {',
+  // Diagonal insert between (0,0) and (1,1) of this cell.
+  '    vec3 d45a = tap(base, vec2(-1.0, -1.0));', // down-right diagonal taps
+  '    vec3 d45b = tap(base, vec2( 0.0,  0.0));',
+  '    vec3 d45c = tap(base, vec2( 1.0,  1.0));',
+  '    vec3 d45d = tap(base, vec2( 2.0,  2.0));',
+  '    vec3 d135a = tap(base, vec2( 2.0, -1.0));',// up-right diagonal taps
+  '    vec3 d135b = tap(base, vec2( 1.0,  0.0));',
+  '    vec3 d135c = tap(base, vec2( 0.0,  1.0));',
+  '    vec3 d135d = tap(base, vec2(-1.0,  2.0));',
+  // Gradient strength across each diagonal direction.
+  '    float g45 = abs(lum(d135a) - lum(d135b)) + abs(lum(d135b) - lum(d135c))',
+  '              + abs(lum(d135c) - lum(d135d));',
+  '    float g135 = abs(lum(d45a) - lum(d45b)) + abs(lum(d45b) - lum(d45c))',
+  '               + abs(lum(d45c) - lum(d45d));',
+  '    vec3 p45 = cubic4(d45a, d45b, d45c, d45d);',
+  '    vec3 p135 = cubic4(d135a, d135b, d135c, d135d);',
+  '    if ((1.0 + g45) > 1.15 * (1.0 + g135)) { res = p135; }',
+  '    else if ((1.0 + g135) > 1.15 * (1.0 + g45)) { res = p45; }',
+  '    else {',
+  '      float w45 = 1.0 / (1.0 + g45 * g45 * g45);',
+  '      float w135 = 1.0 / (1.0 + g135 * g135 * g135);',
+  '      res = (w45 * p45 + w135 * p135) / (w45 + w135);',
+  '    }',
+  '  } else {',
+  // Row/column insert: cubic along the axis of the two nearest samples,',
+  // blended against the perpendicular cubic by gradient strength.
+  '    vec2 ax = (par.x > 0.5) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);',
+  '    vec2 pe = vec2(ax.y, ax.x);',
+  '    vec3 a1 = tap(base, -1.0 * ax);',
+  '    vec3 a2 = tap(base,  0.0 * ax);',
+  '    vec3 a3 = tap(base,  1.0 * ax);',
+  '    vec3 a4 = tap(base,  2.0 * ax);',
+  '    vec3 b1 = tap(base, 0.5 * ax - 1.5 * pe);',
+  '    vec3 b2 = tap(base, 0.5 * ax - 0.5 * pe);',
+  '    vec3 b3 = tap(base, 0.5 * ax + 0.5 * pe);',
+  '    vec3 b4 = tap(base, 0.5 * ax + 1.5 * pe);',
+  '    float ga = abs(lum(a2) - lum(a3));',
+  '    float gp = abs(lum(b2) - lum(b3));',
+  '    vec3 pa = cubic4(a1, a2, a3, a4);',
+  '    vec3 pp = 0.5 * (b2 + b3);',
+  '    if ((1.0 + gp) > 1.15 * (1.0 + ga)) { res = pa; }',
+  '    else if ((1.0 + ga) > 1.15 * (1.0 + gp)) { res = pp; }',
+  '    else {',
+  '      float wa = 1.0 / (1.0 + ga * ga * ga);',
+  '      float wp = 1.0 / (1.0 + gp * gp * gp);',
+  '      res = (wa * pa + wp * pp) / (wa + wp);',
+  '    }',
+  '  }',
+  '  gl_FragColor = vec4(res, 1.0);',
+  '}',
+].join('\n');
+
+// ---- WebGL pipeline -------------------------------------------------------
+
+const glFilter = { gl: null, programs: null, tex: null, ok: false };
+
+function gpuFilterReady() {
+  if (glFilter.programs) return glFilter.ok;
+  glFilter.ok = false;
+  glFilter.programs = {};
+  try {
+    const gl = filtercanvas.getContext('webgl', { alpha: false, antialias: false });
+    if (!gl) throw new Error('no webgl');
+    function compile(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        throw new Error('shader: ' + gl.getShaderInfoLog(sh));
+      }
+      return sh;
+    }
+    const vs = compile(gl.VERTEX_SHADER, FILTER_VERTEX_SRC);
+    const sources = { hq2x: FILTER_HQ2X_SRC, xbr: FILTER_XBR_SRC, dcci: FILTER_DCCI_SRC };
+    for (const key in sources) {
+      const p = gl.createProgram();
+      gl.attachShader(p, vs);
+      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, sources[key]));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        throw new Error('link ' + key + ': ' + gl.getProgramInfoLog(p));
+      }
+      glFilter.programs[key] = {
+        p: p,
+        uSrcSize: gl.getUniformLocation(p, 'uSrcSize'),
+        aPos: gl.getAttribLocation(p, 'aPos'),
+      };
+    }
+    // One fullscreen triangle.
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    // The source texture, refreshed from the game canvas every frame.
+    glFilter.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    glFilter.gl = gl;
+    glFilter.ok = true;
+  } catch (err) {
+    console.log('GPU filters disabled: ' + err.message);
+  }
+  return glFilter.ok;
+}
+
+// Runs forever; costs nothing while no GPU filter is selected.
+function gpuFilterFrame() {
+  requestAnimationFrame(gpuFilterFrame);
+  if (!gameStarted || !activeGpuFilter || !glFilter.ok) return;
+  const gl = glFilter.gl;
+  const bw = canvas.width, bh = canvas.height;
+  if (!bw || !bh) return;
+  if (filtercanvas.width !== bw * 2 || filtercanvas.height !== bh * 2) {
+    filtercanvas.width = bw * 2;
+    filtercanvas.height = bh * 2;
+  }
+  gl.viewport(0, 0, bw * 2, bh * 2);
+  gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  const prog = glFilter.programs[activeGpuFilter];
+  gl.useProgram(prog.p);
+  gl.uniform2f(prog.uSrcSize, bw, bh);
+  gl.enableVertexAttribArray(prog.aPos);
+  gl.vertexAttribPointer(prog.aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+requestAnimationFrame(gpuFilterFrame);
 
 /* =========================================================================
  * Start the game
@@ -2211,6 +2635,16 @@ function bootEngine() {
       wadArgs.push('-dehlump');
     }
 
+    // Total-conversion WADs from the free-games buttons: -merge folds their
+    // sprites and flats in properly (plain -file cannot on this engine).
+    if (mergeSpecs.length > 0) {
+      wadArgs.push('-merge');
+      mergeSpecs.forEach(function (p) {
+        Module.FS.writeFile('/' + p.name, p.bytes);
+        wadArgs.push('/' + p.name);
+      });
+    }
+
     // From here on, intercept and remap keys, and let the mouse handlers
     // reach the engine's mouse bridge.
     doomModule = Module;
@@ -2271,6 +2705,108 @@ HTML_EOF
 BUILD_STAMP="emsdk ${EMSDK_VERSION}, doomgeneric ${DOOMGENERIC_COMMIT:0:7} patched, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
 sed -i "s|__BUILD_INFO__|${BUILD_STAMP}|" index.html
 log "Stamped index.html: ${BUILD_STAMP}"
+
+# ---------------------------------------------------------------------------
+# 5.5 Optional freeware game pack
+# ---------------------------------------------------------------------------
+# Downloads freely redistributable games next to the build output (NOT into
+# any repository) and packs each file as base64 inside a small .js file.
+# The page loads these with plain script tags, which work over file:// with
+# no server and no network, so the setup screen gets one-click buttons for:
+# Doom shareware, Freedoom Phase 1 and 2, HACX 1.2, Chex Quest 1 and 2
+# (total conversion over Freedoom), and Harmony (over Freedoom Phase 2).
+# Roughly 95 MB on disk; each game only costs RAM when actually clicked.
+# Control with FREEWARE=1 (download) or FREEWARE=0 (skip); unset asks.
+if [ -z "${FREEWARE:-}" ]; then
+  if [ -t 0 ]; then
+    read -r -p "Download the freeware game pack (~95 MB: Freedoom, shareware Doom, HACX, Chex Quest, Harmony)? [Y/n]: " FW_ANS
+    case "${FW_ANS:-Y}" in
+      [Yy]*|"") FREEWARE=1 ;;
+      *)        FREEWARE=0 ;;
+    esac
+  else
+    FREEWARE=0
+    log "Non-interactive run: skipping the freeware game pack (set FREEWARE=1 to include it)."
+  fi
+fi
+
+if [ "$FREEWARE" = "1" ]; then
+  log "Preparing the freeware game pack (skips files already packed)..."
+  mkdir -p "$BUILD_DIR/freeware"
+  python3 - "$BUILD_DIR/freeware" << 'PACKEOF'
+# Downloads each freeware title, extracts the needed file from its zip when
+# necessary, sanity-checks WAD magics, and writes freeware/<key>.js files
+# the page can load with a script tag. Failures are warnings, not fatal:
+# the page explains per title if its file is missing.
+import base64, io, json, os, subprocess, sys, zipfile
+
+outdir = sys.argv[1]
+
+# (js key, download url, member inside the zip or None for a raw file,
+#  filename the page should present to the engine)
+PLAN = [
+    ("doom1",       "https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad",
+                    None,            "doom1.wad"),
+    ("freedoom1",   "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip",
+                    "freedoom-0.13.0/freedoom1.wad", "freedoom1.wad"),
+    ("freedoom2",   "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip",
+                    "freedoom-0.13.0/freedoom2.wad", "freedoom2.wad"),
+    ("hacx",        "https://www.gamers.org/pub/idgames/themes/hacx/hacx12.zip",
+                    "HACX.WAD",      "hacx.wad"),
+    ("chextc",      "https://www.gamers.org/pub/idgames/themes/chex/chexq.zip",
+                    "chextc.wad",    "chextc.wad"),
+    ("chex_deh",    "https://www.gamers.org/pub/idgames/themes/chex/chexdeh.zip",
+                    "chex.deh",      "chex.deh"),
+    ("newmaps",     "https://www.gamers.org/pub/idgames/themes/chex/newmaps.zip",
+                    "newmaps.WAD",   "newmaps.wad"),
+    ("harmonyc",    "https://www.gamers.org/pub/idgames/levels/doom2/Ports/g-i/harmonyc.zip",
+                    "HarmonyC.wad",  "harmonyc.wad"),
+    ("harmony_deh", "https://www.gamers.org/pub/idgames/levels/doom2/Ports/g-i/harmonyc.zip",
+                    "HarmonyC.deh",  "harmony.deh"),
+]
+
+downloads = {}   # url -> bytes, so the two-member zips download once
+
+def fetch(url):
+    if url not in downloads:
+        print("  downloading %s" % url.split("/")[-1])
+        data = subprocess.run(["curl", "-sL", "--max-time", "600", url],
+                              capture_output=True).stdout
+        if not data:
+            raise RuntimeError("empty download")
+        downloads[url] = data
+    return downloads[url]
+
+failed = []
+for key, url, member, engine_name in PLAN:
+    outpath = os.path.join(outdir, key + ".js")
+    if os.path.exists(outpath):
+        print("  %s: already packed" % key)
+        continue
+    try:
+        raw = fetch(url)
+        if member is not None:
+            raw = zipfile.ZipFile(io.BytesIO(raw)).read(member)
+        if engine_name.endswith(".wad") and raw[:4] not in (b"IWAD", b"PWAD"):
+            raise RuntimeError("not a WAD (bad magic)")
+        b64 = base64.b64encode(raw).decode("ascii")
+        with open(outpath, "w") as f:
+            f.write('window.WASM_BUILDER_FREEWARE = window.WASM_BUILDER_FREEWARE || {};\n')
+            f.write('window.WASM_BUILDER_FREEWARE[%s] = { name: %s, b64: %s };\n'
+                    % (json.dumps(key), json.dumps(engine_name), json.dumps(b64)))
+        print("  %s: packed (%.1f MB)" % (key, len(raw) / 1048576.0))
+    except Exception as e:
+        failed.append(key)
+        print("  %s: FAILED (%s)" % (key, e))
+
+if failed:
+    print("Some titles failed: %s. The page will say so per title;" % ", ".join(failed))
+    print("re-run install.sh to retry just the missing ones.")
+PACKEOF
+  log "Freeware pack step finished (files in $BUILD_DIR/freeware/)."
+else
+  log "Freeware game pack skipped."
+fi
 
 # ---------------------------------------------------------------------------
 # 6. Build

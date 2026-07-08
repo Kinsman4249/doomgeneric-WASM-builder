@@ -11,24 +11,31 @@ What you get:
    PWADs (mods and maps) and DeHackEd patches (.deh) on top. HACX 1.2 works
    as a standalone IWAD. Nothing is baked into the build and nothing is
    uploaded anywhere.
-3. In-browser key remapping, in addition to Doom's own in-game
+3. Optional one-click free games. If you let the installer download the
+   freeware pack, the setup screen offers Doom shareware, Freedoom Phase 1
+   and 2, HACX, Chex Quest 1 and 2, and Harmony as buttons, no files to
+   find. They live next to the build, never in any repository.
+4. In-browser key remapping, in addition to Doom's own in-game
    Options, Customize Controls menu.
-4. Window scaling with pixel-filter presets. The game fills the browser window,
-   and you choose between "Crisp" (the classic chunky pixels) and "Smooth"
-   (softened). You can switch presets live while playing.
-5. Full mouse look, GZDoom style. Click the game to capture the mouse: moving
+5. Window scaling with pixel filters. The game fills the browser window, and
+   you choose between "Crisp" (the classic chunky pixels), "Smooth"
+   (softened), and three GPU upscalers: "hq2x", "xBR", and "DCCI". Switch
+   live while playing.
+6. Full mouse look, GZDoom style. Click the game to capture the mouse: moving
    it turns AND looks up and down, and both mouse buttons shoot. Horizontal
-   and vertical sensitivity are separate, and raw input (no mouse
-   acceleration) is on by default. This goes beyond what the stock engine can
-   do; the build script patches the engine source to add it (see "What is
-   patched in the engine source").
-6. An interactive resolution menu when you build, so you can pick how sharply
+   and vertical sensitivity are separate (seven steps each), and raw input
+   (no mouse acceleration) is on by default. This goes beyond what the stock
+   engine can do; the build script patches the engine source to add it (see
+   "What is patched in the engine source").
+7. An interactive resolution menu when you build, so you can pick how sharply
    the 3D world is rendered without editing anything.
-7. An FPS counter, read from a frame counter inside the engine itself and
+8. An FPS counter, read from a frame counter inside the engine itself and
    toggleable from the in-game bar.
-8. Doom-plus style limit removal: vanilla's 1994-sized static arrays are
+9. Doom-plus style limit removal: vanilla's 1994-sized static arrays are
    enlarged 8x-32x so slaughter-grade maps (huge monster counts, complex
    geometry) stop crashing, without changing gameplay behavior.
+10. DeHackEd and WAD merging support, so classic total conversions load with
+    their graphics intact.
 
 ## How the build is organized
 
@@ -177,9 +184,11 @@ conveniently doubles as opening Doom's own menu. Click the game again to
 recapture.
 
 Horizontal (turning) and vertical (looking) sensitivity are separate
-settings, each with five steps (Low to Very high). Both can be set on the
-setup screen or changed live from the bar at the top of the screen. "Invert
-mouse look" on the setup screen flips the vertical axis.
+settings, each with seven steps (Extra low, Low, Normal, High, Higher, Very
+high, Extra high). The defaults are Sens X High and Sens Y Low, which suits
+mouse-look play: quick turning with restrained vertical aim. Both can be set
+on the setup screen or changed live from the bar at the top of the screen.
+"Invert mouse look" on the setup screen flips the vertical axis.
 
 "Raw input (disable mouse acceleration)" is on by default: it asks the
 browser for unaccelerated mouse motion (the pointer lock unadjustedMovement
@@ -207,11 +216,17 @@ strength. It offers:
      classic large, sharp Doom pixels. This is closest to the original look.
    - "Smooth" uses the browser's built-in bilinear smoothing, which blends the
      pixels for a softer image.
+   - "hq2x", "xBR", and "DCCI" are GPU upscalers (WebGL shaders) that redraw
+     the frame at double resolution with edge-aware interpolation, the same
+     family of filters emulators use. hq2x rounds pixel-art edges, xBR keeps
+     sharper diagonals, and DCCI is a smooth directional-cubic look. If your
+     browser has no usable WebGL, these fall back to Smooth automatically.
 2. Aspect:
    - "4:3 (original look)" matches how Doom was shown on period monitors.
    - "Square pixels" displays the buffer without stretching.
 3. Sens X and Sens Y: horizontal (turning) and vertical (looking) mouse
-   sensitivity, five steps each.
+   sensitivity, seven steps each from Extra low to Extra high. Defaults are
+   Sens X High and Sens Y Low (fast turning, gentle vertical aim).
 4. FPS: shows or hides a performance readout in the top right corner, with
    two numbers sampled once a second from counters inside the engine:
    - "FPS" is how often the engine renders, which the browser drives.
@@ -260,6 +275,35 @@ keeping all the integration code), which enables all of the following:
 
 A malformed patch stops the engine with a parse error, which the page shows
 in its red error box including the offending line.
+
+### One-click free games
+
+If you answer yes to the freeware pack when running `install.sh`, the setup
+screen shows a row of buttons that load a game in one click, with no files to
+hunt down. The games are downloaded next to the build (never into any
+repository) and packed as data the page loads locally, so this still works
+over `file://` with no server. Each game only occupies memory while you are
+actually playing it.
+
+- Doom Shareware, Freedoom Phase 1, Freedoom Phase 2, and HACX 1.2 load
+  directly as their own IWADs.
+- Chex Quest and Chex Quest 2 load as total conversions over Freedoom Phase
+  1, merged so their graphics display, with the Chex DeHackEd patch applied.
+- Harmony loads as a total conversion over Freedoom Phase 2 the same way.
+
+Loading a free game replaces anything you picked by hand above. If a button
+reports the game is missing, re-run `install.sh` and answer yes to the
+freeware pack (it only downloads what is not already there).
+
+Chex Quest 3 is deliberately absent: it is a ZDoom-engine game (Hexen map
+format, DECORATE, MAPINFO) that a vanilla engine cannot run, so shipping a
+button for it would only produce a broken load.
+
+Merging total conversions is possible because the build also restores the
+engine's `-merge` support (see "What is patched in the engine source"),
+which folds a PWAD's sprites and flats into the IWAD the way the classic
+deutex tool did. This is what lets Chex Quest and Harmony look right rather
+than showing Doom or Freedoom graphics.
 
 One format caveat that neither limit removal nor DeHackEd changes: this
 engine only understands VANILLA map behavior. Many modern community WADs
@@ -350,16 +394,20 @@ script runs. What the patch does, file by file:
 4. `r_things.c`: the weapon sprite would ride up and down with the sheared
    view; a compensation term holds it steady on screen (weapon bob still
    works).
-5. DeHackEd support restored. doomgeneric kept every line of Chocolate
-   Doom's DeHackEd integration (the IWAD patch loader with its HACX,
-   Freedoom, and Chex Quest handling, the `-deh` command line parser, and
-   the PWAD DEHACKED lump loader) but fenced it off and deleted the parser
-   implementation files. The patch re-opens the four fences in `d_main.c`
-   and flips the `FEATURE_DEHACKED` switch in `doomfeatures.h`; the parser
-   sources themselves are restored by `install.sh` from Chocolate Doom
-   2.3.0, the exact release this fork descends from (the deh headers that
-   remained in doomgeneric are byte-identical to that release's), with a
-   one-line adaptation for this tree's WAD directory layout.
+5. DeHackEd and WAD-merge support restored. doomgeneric kept every line of
+   Chocolate Doom's integration for both (the DeHackEd IWAD patch loader
+   with its HACX, Freedoom, and Chex Quest handling, the `-deh` parser, the
+   PWAD DEHACKED lump loader, and the `-merge` total-conversion loader) but
+   fenced them off and deleted the implementation files. The patch re-opens
+   the fences in `d_main.c` and flips `FEATURE_DEHACKED` and
+   `FEATURE_WAD_MERGE` in `doomfeatures.h`; the implementation sources
+   (`deh_*.c` and `w_merge.c`) are restored by `install.sh` from Chocolate
+   Doom 2.2.1, the exact release this fork descends from. The vintage is
+   confirmed byte-for-byte: the deh and merge headers still present in
+   doomgeneric are identical to that release's, and the restored sources
+   compile against this tree with no adaptation. WAD merging is what lets
+   total conversions (Chex Quest, Harmony) display their own graphics
+   instead of the base IWAD's.
 6. Static limit removal, Doom-plus style, across several files. Vanilla
    Doom sized its arrays for 1994 maps; slaughter-grade community maps
    overflow them, which either crashes with an engine error or silently
@@ -625,8 +673,26 @@ the crash and the game now runs.
     Quest (with `chex.deh` supplied) work. doomgeneric had kept all of
     Chocolate Doom's DeHackEd integration but deleted the parser; the
     engine patch re-opens the integration and `install.sh` restores the
-    parser sources from Chocolate Doom 2.3.0, this fork's exact ancestor
+    parser sources from Chocolate Doom 2.2.1, this fork's exact ancestor
     vintage. See item 5 under "What is patched in the engine source".
+
+### GPU filters, free games, WAD merging, sensitivity (round ten)
+
+41. Three GPU pixel upscalers added (hq2x, xBR, DCCI), implemented as WebGL
+    shaders that redraw the frame at 2x with edge-aware interpolation onto
+    an overlay canvas, with automatic fallback to Smooth when WebGL is
+    unavailable. All three shaders were compiled and checked before
+    shipping.
+42. WAD-merge (`-merge`) support restored alongside DeHackEd, so total
+    conversions load with their own graphics. See item 5 under "What is
+    patched in the engine source".
+43. Optional one-click free games. The installer can download a freeware
+    pack (Doom shareware, Freedoom 1 and 2, HACX, Chex Quest 1 and 2,
+    Harmony) and pack each file for local `file://` loading; the setup
+    screen turns them into buttons. Nothing is stored in the repository.
+    Chex Quest 3 is intentionally excluded as a ZDoom-only game.
+44. Mouse sensitivity now has seven steps per axis (Extra low to Extra
+    high), and the defaults changed to Sens X High, Sens Y Low.
 
 ## Performance notes
 
