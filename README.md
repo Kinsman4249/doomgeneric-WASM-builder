@@ -53,7 +53,9 @@ whether its work is already done before doing it again. In order, it will:
 
 1. Install required packages (`git make cmake python3 gcc gcc-c++ patch`) if
    any are missing.
-2. Clone and activate the Emscripten SDK into `~/emsdk` if not already present.
+2. Clone the Emscripten SDK into `~/emsdk` if not already present, then
+   install and activate a pinned, known-good release of it (see "Why the
+   toolchain is pinned" below).
 3. Add the emsdk environment to `~/.bashrc` and `~/.bash_profile` so that
    `emcc` is available in future shells without any manual step.
 4. Clone `doomgeneric` into `~/doomgeneric` if not already present.
@@ -172,9 +174,54 @@ server. The generated version in this repo changes the following:
 8. Puts linker settings such as `SDL2_MIXER_FORMATS` in the link flags rather
    than the compile flags, so MIDI music support is actually wired in and the
    compiler does not warn on every file.
+9. Targets browsers only (`-s ENVIRONMENT=web`), which strips runtime code
+   paths meant for Node.js and workers. Those paths have a history of
+   attempting loads that browsers block on `file://` pages.
+10. Uses Emscripten's plain JavaScript string decoder (`-s TEXTDECODER=0`)
+    instead of the browser's TextDecoder, because some browsers refuse
+    TextDecoder on memory that can grow, which crashes the game at startup.
 
 The original upstream file is preserved as `Makefile.emscripten.orig` the first
 time the script runs.
+
+## Why the toolchain is pinned
+
+The script installs Emscripten SDK release 3.1.64, not "latest". A newer
+release produced builds that crashed at startup in some browsers, with errors
+like these in the console:
+
+```text
+TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
+ArrayBuffer value must not be resizable
+```
+
+```text
+Unsafe attempt to load URL file:///.../index.html from frame with URL
+file:///.../index.html. 'file:' URLs are treated as unique security origins.
+```
+
+The first happens when a newer runtime asks the browser's TextDecoder to read
+strings out of memory that can grow, which some browsers refuse. The second
+happens when a newer runtime attempts a network style load, which browsers
+block on `file://` pages. Pinning the toolchain avoids both, and it also makes
+builds reproducible: the same script always produces the same result instead
+of whatever happened to be released last week.
+
+If you built with an older copy of this script (which used "latest"), pull the
+latest version of this repo and re-run `./install.sh`. SDK releases install
+side by side, the script activates the pinned one, and every build starts with
+a clean step, so the fix applies automatically. Then reload `index.html` with a
+hard refresh (Ctrl+Shift+R) so the browser does not reuse a cached copy of the
+old `doomgeneric.js`.
+
+To experiment with a different SDK release anyway:
+
+```bash
+EMSDK_VERSION=4.0.10 ./install.sh
+```
+
+If a much newer SDK rejects the `TEXTDECODER` setting, remove that flag from
+the Makefile section of `install.sh` and rebuild.
 
 ## Fixes in this build compared with the earlier version
 
@@ -189,6 +236,11 @@ time the script runs.
 5. Added window scaling with "Crisp" and "Smooth" pixel-filter presets, an
    aspect-ratio choice, a fullscreen button, and an optional build-time
    internal resolution setting.
+6. Pinned the Emscripten toolchain to a known-good release instead of
+   "latest", after a newer release produced builds that crashed at startup in
+   some browsers. See "Why the toolchain is pinned".
+7. If the engine fails to start, the page now shows a readable error box with
+   recovery steps instead of a silent black screen.
 
 ## Legal note
 
@@ -198,7 +250,7 @@ legally own, or the freely distributable shareware `doom1.wad`.
 
 ## Troubleshooting
 
-1. `emcc: command not found` right after `./emsdk activate latest`. The activate
+1. `emcc: command not found` right after `./emsdk activate`. The activate
    step only prints instructions, it does not change your current shell. Run
    `source ~/emsdk/emsdk_env.sh` in the current shell, or open a new shell if
    you already added the sourcing line to `.bashrc`.
@@ -235,3 +287,18 @@ legally own, or the freely distributable shareware `doom1.wad`.
 6. The game looks blurry and you wanted sharp pixels, or looks harsh and you
    wanted it softer. Use the "Filter" control at the top of the screen. "Crisp"
    is the sharp original look, "Smooth" is the blended look.
+
+7. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
+   ArrayBuffer value must not be resizable` in the console, and the game never
+   starts. The build was made with a too-new Emscripten toolchain whose
+   runtime some browsers reject. Pull the latest version of this repo, re-run
+   `./install.sh` (it now pins a known-good toolchain and always rebuilds from
+   a clean step), then hard refresh the page (Ctrl+Shift+R). See "Why the
+   toolchain is pinned".
+
+8. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as unique
+   security origins` in the console. Same cause and same fix as the previous
+   entry: a too-new runtime attempted a network style load, which browsers do
+   not allow on `file://` pages. The pinned toolchain embeds everything inside
+   `doomgeneric.js` and never needs to load anything at runtime, which is what
+   makes the no-server design work.

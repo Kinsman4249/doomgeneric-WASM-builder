@@ -40,6 +40,16 @@ DOOMGENERIC_DIR="${DOOMGENERIC_DIR:-$HOME/doomgeneric}"
 # Where the Emscripten SDK (the C-to-WASM compiler) will be installed.
 EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
 
+# Which Emscripten SDK release to install. This is PINNED to a known-good
+# version on purpose, instead of "latest". A brand-new SDK release broke this
+# exact build in the wild: the game crashed at startup with
+#   "TextDecoder ... The provided ArrayBuffer value must not be resizable"
+# and the runtime attempted a load that browsers block on file:// pages
+# ("Unsafe attempt to load URL file:...").
+# Pinning also makes builds reproducible: the same script always produces the
+# same result. Override by exporting EMSDK_VERSION if you want to experiment.
+EMSDK_VERSION="${EMSDK_VERSION:-3.1.64}"
+
 # ---- Optional internal render resolution -----------------------------------
 # doomgeneric renders the game into a fixed-size pixel buffer that is baked in
 # at COMPILE time (it cannot change while the game is running). The default is
@@ -142,9 +152,13 @@ else
 fi
 
 cd "$EMSDK_DIR"
-log "Installing/activating latest emsdk (skips cleanly if already done)..."
-./emsdk install latest
-./emsdk activate latest
+log "Installing/activating emsdk $EMSDK_VERSION (skips cleanly if already done)..."
+# 'install' downloads that exact compiler release (a no-op if already there).
+# 'activate' makes it the version that emsdk_env.sh puts on PATH.
+# Releases install side by side, so switching between versions is cheap and
+# does not remove anything you already have.
+./emsdk install "$EMSDK_VERSION"
+./emsdk activate "$EMSDK_VERSION"
 
 # 'source' runs the given script in the CURRENT shell so that the emcc compiler
 # is added to this shell's PATH. The 'shellcheck disable' comment silences a
@@ -262,6 +276,19 @@ CFLAGS += -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
 #                                so the page can write a WAD into memory.
 #   ALLOW_MEMORY_GROWTH=1      : let WASM memory grow on demand, so loading a
 #                                large PWAD at runtime does not run out of heap.
+#   ENVIRONMENT=web            : generate code for browsers only. Strips the
+#                                runtime's Node.js and worker detection code,
+#                                which has a history of attempting loads that
+#                                browsers block on file:// pages.
+#   TEXTDECODER=0              : use Emscripten's plain JavaScript string
+#                                decoder instead of the browser's TextDecoder.
+#                                Some browsers refuse TextDecoder on memory
+#                                that can grow (a "resizable ArrayBuffer") and
+#                                crash the game at startup. Doom does so little
+#                                text decoding that speed is a non-issue. If
+#                                you override EMSDK_VERSION to a much newer SDK
+#                                and it rejects this setting, remove it here
+#                                and in LDFLAGS below.
 #   MODULARIZE=1 + EXPORT_NAME : expose the build as DoomModule(...) instead of
 #                                dumping symbols into the global scope.
 #   EXPORTED_RUNTIME_METHODS   : keep callMain (to start the game manually) and
@@ -274,6 +301,8 @@ LDFLAGS += $(SDL_FLAGS) \
 	-s SINGLE_FILE=1 \
 	-s FORCE_FILESYSTEM=1 \
 	-s ALLOW_MEMORY_GROWTH=1 \
+	-s ENVIRONMENT=web \
+	-s TEXTDECODER=0 \
 	-s MODULARIZE=1 \
 	-s EXPORT_NAME="DoomModule" \
 	-s EXPORTED_RUNTIME_METHODS=['callMain','FS'] \
@@ -408,6 +437,25 @@ cat > index.html << 'HTML_EOF'
   #canvas.crisp { image-rendering: pixelated; }
   /* "Smooth" preset: the browser's default smoothing (bilinear) => softer. */
   #canvas.smooth { image-rendering: auto; }
+
+  /* Fatal-error box: shown centered over the stage if the engine fails to
+     start, so the failure is readable instead of a silent black screen. */
+  #errbox {
+    display: none;               /* flipped to "block" by showFatalError() */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;                 /* above the canvas and the control bar */
+    max-width: 640px;
+    padding: 14px 18px;
+    border: 1px solid #a33;
+    border-radius: 8px;
+    background: rgba(40, 0, 0, 0.92);
+    color: #f2c9c9;
+    font-size: 13px;
+    white-space: pre-wrap;       /* keep the message's line breaks */
+  }
 </style>
 </head>
 <body>
@@ -489,6 +537,9 @@ cat > index.html << 'HTML_EOF'
 
   <!-- The game canvas. tabindex="-1" lets us focus it from code. -->
   <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+
+  <!-- Shown only if the engine fails to start (see showFatalError below). -->
+  <div id="errbox"></div>
 </div>
 
 <!-- The compiled engine. Defines the global DoomModule(...) factory. -->
@@ -520,6 +571,30 @@ const aspectSetup   = document.getElementById('aspectMode');
 const filterHud     = document.getElementById('filterModeHud');
 const aspectHud     = document.getElementById('aspectModeHud');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
+const errbox        = document.getElementById('errbox');
+
+/* =========================================================================
+ * Fatal error reporting
+ * -------------------------------------------------------------------------
+ * If the engine fails to start, show a readable message on the page instead
+ * of leaving a silent black screen (otherwise the error only appears in the
+ * developer console, where most people never look).
+ * ========================================================================= */
+
+function showFatalError(err) {
+  // Prefer the error's own message; fall back to stringifying whatever we got.
+  const msg = (err && err.message) ? err.message : String(err);
+  errbox.textContent =
+    'DOOM failed to start.\n\n' +
+    msg + '\n\n' +
+    'If the browser console mentions TextDecoder, a resizable ArrayBuffer,\n' +
+    'or an unsafe attempt to load a file:// URL, the engine was built with\n' +
+    'an incompatible toolchain. Update this repo, re-run ./install.sh (it\n' +
+    'pins a known-good toolchain and rebuilds cleanly), then reload this\n' +
+    'page with a hard refresh (Ctrl+Shift+R).';
+  errbox.style.display = 'block';
+  console.error('DOOM failed to start:', err);
+}
 
 /* =========================================================================
  * WAD file picker
@@ -763,13 +838,13 @@ startBtn.addEventListener('click', function () {
       Module.callMain(['-iwad', '/doom1.wad']);
     } catch (err) {
       const isUnwind = (err === 'unwind') || (err && err.message === 'unwind');
-      if (!isUnwind) console.error('DOOM exited unexpectedly:', err);
+      if (!isUnwind) showFatalError(err);
     }
 
     // Now that the engine has set the real buffer size, fit to the window.
     applyScaling();
     canvas.focus();
-  });
+  }).catch(showFatalError);   // any failure while booting the engine lands here
 });
 </script>
 </body>
