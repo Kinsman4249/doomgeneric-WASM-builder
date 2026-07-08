@@ -13,8 +13,9 @@ What you get:
    uploaded anywhere.
 3. Optional one-click free games. If you let the installer download the
    freeware pack, the setup screen offers Doom shareware, Freedoom Phase 1
-   and 2, HACX, Chex Quest 1 and 2, and Harmony as buttons, no files to
-   find. They live next to the build, never in any repository.
+   and 2, HACX, Chex Quest 1 and 2, Harmony, WolfenDoom: First Encounter,
+   and STRAIN as buttons, no files to find. They live next to the build,
+   never in any repository.
 4. In-browser key remapping, in addition to Doom's own in-game
    Options, Customize Controls menu.
 5. Window scaling with pixel filters. The game fills the browser window, and
@@ -296,6 +297,11 @@ actually playing it.
   Phase 2. It is a fan work using id's own Wolfenstein designs, distributed
   with the author's stated permission; his readme is installed in the pack
   folder, as his distribution terms ask.
+- STRAIN (1997, Alpha Dog Alliance) loads as a total conversion over
+  Freedoom Phase 2, with its extensive DeHackEd patch applied. Its
+  distribution terms permit free electronic distribution provided the text
+  file and the entire package are included unmodified, so the pack stores
+  the complete original archive untouched alongside the loader files.
 
 Loading a free game replaces anything you picked by hand above. If a button
 reports the game is missing, re-run `install.sh` and answer yes to the
@@ -313,13 +319,14 @@ than showing Doom or Freedoom graphics. The same loader is available for
 your own files: tick "load as total conversion" next to the PWAD picker.
 
 Two famous total conversions are linked from the setup screen as reading
-material but deliberately NOT offered as downloads: Aliens TC (1994) and
-Batman Doom (1999, ACE Team). Both run on this engine class, but both are
-based on film and comics properties, so their licensing is murkier than the
-officially freeware pack above. The page links their Doom Wiki articles so
-players can read up and decide for themselves; if obtained, they load
-through the PWAD picker with the total-conversion box ticked (Batman Doom
-also wants its .deh file).
+material but deliberately NOT offered as downloads: Aliens TC (1994),
+Batman Doom (1999, ACE Team), and Star Wars for Doom II (1998). All run on
+this engine class, but all are based on film and comics properties, so
+their licensing is murkier than the officially freeware pack above. The
+page links where to read up (Doom Wiki articles, and the Doomworld archive
+page for Star Wars) so players can research and decide for themselves; if
+obtained, they load through the PWAD picker with the total-conversion box
+ticked (Batman Doom also wants its .deh file).
 
 One format caveat that neither limit removal nor DeHackEd changes: this
 engine only understands VANILLA map behavior. Many modern community WADs
@@ -748,6 +755,19 @@ the crash and the game now runs.
     in deh_io.c). The cache is now keyed on the release tag and refreshes
     itself, and a vintage guard turns any future drift into a clear
     message instead of a compiler error.
+
+### STRAIN and Star Wars notes (round fifteen)
+
+50. Added STRAIN (1997, Alpha Dog Alliance) to the freeware pack as a
+    one-click total conversion over Freedoom Phase 2, DeHackEd patch
+    included. Verified from the archive: vanilla Doom II target, WAD and
+    patch decode intact from the pack. Its terms permit free electronic
+    distribution provided the text file and the entire package are
+    included unmodified, so the pack stores the complete original archive
+    untouched alongside the loader files.
+51. Added Star Wars for Doom II (1998) to the read-up notes beside Aliens
+    TC and Batman Doom: film property, so a link to its archive page
+    rather than a download, by the same reasoning.
 
 ## Performance notes
 

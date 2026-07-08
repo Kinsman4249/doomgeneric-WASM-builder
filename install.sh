@@ -1347,8 +1347,11 @@ cat > index.html << 'HTML_EOF'
     One click loads a freely redistributable game from the pack that
     <code>install.sh</code> downloaded next to this page (nothing leaves
     your machine; each game is only held in memory while you play). Chex
-    Quest, Harmony, and WolfenDoom run as total conversions over Freedoom,
-    merged properly so their graphics show. WolfenDoom: First Encounter is
+    Quest, Harmony, WolfenDoom, and STRAIN run as total conversions over
+    Freedoom, merged properly so their graphics show. STRAIN is Alpha Dog
+    Alliance's legendary 1997 partial conversion; its distribution terms
+    ask for the complete package to be included, so the original archive
+    is stored untouched in the pack folder. WolfenDoom: First Encounter is
     Laz Rojas' faithful recreation of the Wolfenstein 3D demo episode, a
     fan work distributed with the author's stated permission (his readme is
     installed in the pack folder). Loading a title replaces any manually
@@ -1357,13 +1360,14 @@ cat > index.html << 'HTML_EOF'
   <p id="freegames"></p>
   <p class="hint" id="freegamesStatus"></p>
   <p class="hint">
-    Worth knowing about, deliberately NOT downloadable here: two of the most
-    famous total conversions ever made run on this engine class, and both
+    Worth knowing about, deliberately NOT downloadable here: some of the most
+    famous total conversions ever made run on this engine class, but they
     are based on film and comics properties, so their licensing is murkier
     than the pack above. Read up and decide for yourself:
-    <a href="https://doomwiki.org/wiki/Aliens_TC" target="_blank" rel="noopener noreferrer">Aliens TC (1994)</a>
+    <a href="https://doomwiki.org/wiki/Aliens_TC" target="_blank" rel="noopener noreferrer">Aliens TC (1994)</a>,
+    <a href="https://doomwiki.org/wiki/Batman_Doom" target="_blank" rel="noopener noreferrer">Batman Doom (1999, ACE Team)</a>,
     and
-    <a href="https://doomwiki.org/wiki/Batman_Doom" target="_blank" rel="noopener noreferrer">Batman Doom (1999, ACE Team)</a>.
+    <a href="https://www.doomworld.com/files/file/9761-star-wars-for-doom2-v133-final-release/" target="_blank" rel="noopener noreferrer">Star Wars for Doom II (1998)</a>.
     If you obtain one, load its WAD through the PWAD picker above with
     "load as total conversion" ticked (Aliens TC over a Doom 1 class IWAD,
     Batman Doom over a Doom 2 class IWAD plus its .deh file).
@@ -1872,6 +1876,7 @@ const FREEWARE_TITLES = [
   { key: 'chex2',     label: 'Chex Quest 2',      iwad: 'freedoom1', merge: ['chextc', 'newmaps'], deh: ['chex_deh'] },
   { key: 'harmony',   label: 'Harmony',           iwad: 'freedoom2', merge: ['harmonyc'], deh: ['harmony_deh'] },
   { key: 'wolfen1',   label: 'WolfenDoom: First Encounter', iwad: 'freedoom2', merge: ['wolfen1'] },
+  { key: 'strain',    label: 'STRAIN',            iwad: 'freedoom2', merge: ['strain'], deh: ['strain_deh'] },
 ];
 
 // Decode base64 into bytes (a few MB decodes in well under a second).
@@ -2784,11 +2789,11 @@ log "Stamped index.html: ${BUILD_STAMP}"
 # (total conversion over Freedoom), Harmony (over Freedoom Phase 2), and
 # WolfenDoom: First Encounter (over Freedoom Phase 2, with the author's
 # readme installed alongside as his distribution terms ask).
-# Roughly 95 MB on disk; each game only costs RAM when actually clicked.
+# Roughly 125 MB on disk; each game only costs RAM when actually clicked.
 # Control with FREEWARE=1 (download) or FREEWARE=0 (skip); unset asks.
 if [ -z "${FREEWARE:-}" ]; then
   if [ -t 0 ]; then
-    read -r -p "Download the freeware game pack (~95 MB: Freedoom, shareware Doom, HACX, Chex Quest, Harmony)? [Y/n]: " FW_ANS
+    read -r -p "Download the freeware game pack (~125 MB: Freedoom, shareware Doom, HACX, Chex Quest, Harmony, WolfenDoom, STRAIN)? [Y/n]: " FW_ANS
     case "${FW_ANS:-Y}" in
       [Yy]*|"") FREEWARE=1 ;;
       *)        FREEWARE=0 ;;
@@ -2838,6 +2843,17 @@ PLAN = [
                     "1st_enc.wad",   "1st_enc.wad"),
     ("wolfen1_readme", "https://www.gamers.org/pub/idgames/themes/wolf3d/1st_enc.zip",
                     "1st_enc.txt",   "1st_enc-readme.txt"),
+    # STRAIN (1997, Alpha Dog Alliance): distribution terms require including
+    # the text file and the ENTIRE package unmodified, so besides the loader
+    # files the complete original zip is stored as-is alongside.
+    ("strain",      "https://www.gamers.org/pub/idgames/levels/doom2/megawads/strain.zip",
+                    "STRAIN.WAD",    "strain.wad"),
+    ("strain_deh",  "https://www.gamers.org/pub/idgames/levels/doom2/megawads/strain.zip",
+                    "STRAIN.DEH",    "strain.deh"),
+    ("strain_readme", "https://www.gamers.org/pub/idgames/levels/doom2/megawads/strain.zip",
+                    "STRAIN.TXT",    "strain-readme.txt"),
+    ("strain_package", "https://www.gamers.org/pub/idgames/levels/doom2/megawads/strain.zip",
+                    None,            "strain-package.zip"),
 ]
 
 downloads = {}   # url -> bytes, so the two-member zips download once
@@ -2854,8 +2870,8 @@ def fetch(url):
 
 failed = []
 for key, url, member, engine_name in PLAN:
-    is_text = engine_name.endswith(".txt")
-    outpath = os.path.join(outdir, engine_name if is_text else key + ".js")
+    is_raw = engine_name.endswith(".txt") or engine_name.endswith(".zip")
+    outpath = os.path.join(outdir, engine_name if is_raw else key + ".js")
     if os.path.exists(outpath):
         print("  %s: already packed" % key)
         continue
@@ -2863,9 +2879,9 @@ for key, url, member, engine_name in PLAN:
         raw = fetch(url)
         if member is not None:
             raw = zipfile.ZipFile(io.BytesIO(raw)).read(member)
-        if is_text:
-            # Plain documentation file (for example a readme whose inclusion
-            # is a distribution condition): store it as-is.
+        if is_raw:
+            # Stored as-is, not packed: readmes and complete original
+            # packages whose inclusion is a distribution condition.
             with open(outpath, "wb") as f:
                 f.write(raw)
             print("  %s: installed (%d bytes)" % (key, len(raw)))
