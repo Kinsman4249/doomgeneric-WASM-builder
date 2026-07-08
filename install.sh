@@ -1394,17 +1394,51 @@ function wadLumpNames(bytes) {
   return names;
 }
 
-// The shareware doom1.wad contains episode 1 only. Registered, retail,
-// Freedoom, and Doom 2 style IWADs all contain E2M1 or MAP01. This mirrors
-// how the engine itself detects shareware.
-function looksLikeSharewareIwad(bytes) {
-  const names = wadLumpNames(bytes);
-  if (!names) return false;   // unreadable: let the engine decide
-  return names.has('E1M1') && !names.has('E2M1') && !names.has('MAP01');
+// Decide what filename the engine should see for the chosen IWAD. This
+// matters more than it sounds: the engine identifies IWADs by FILENAME
+// first (doom2.wad means Doom II, doom1.wad means shareware, and so on,
+// from its own name table in d_iwad.c) and only inspects the contents for
+// names it does not recognize. Older versions of this page presented every
+// file as doom1.wad, which made the engine treat even a real doom2.wad as
+// shareware Doom 1 and refuse PWADs with it.
+function chooseIwadName(realName, bytes) {
+  const names = wadLumpNames(bytes) || new Set();
+  const base = String(realName || '').toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+
+  // Filenames this Doom engine knows (from its d_iwad.c table).
+  const known = ['doom2.wad', 'plutonia.wad', 'tnt.wad', 'doom.wad',
+                 'doom1.wad', 'chex.wad', 'hacx.wad', 'freedm.wad',
+                 'freedoom2.wad', 'freedoom1.wad'];
+
+  // What the contents say it is: MAP01 means a Doom II style WAD, episode
+  // lumps beyond E1 mean full Doom 1, episode 1 only means shareware.
+  const contentName = names.has('MAP01') ? 'doom2.wad'
+    : (names.has('E2M1') || names.has('E3M1') || names.has('E4M1')) ? 'doom.wad'
+    : 'doom1.wad';
+
+  if (known.indexOf(base) !== -1) {
+    // Trust a recognized filename, except a full WAD misnamed doom1.wad,
+    // which the engine would wrongly treat as shareware.
+    if (base === 'doom1.wad' && contentName !== 'doom1.wad') return contentName;
+    return base;
+  }
+  return contentName;
 }
 
-// Tracks whether the chosen main WAD is the shareware version, because the
-// engine refuses to load PWADs on top of shareware (by design, since 1993).
+// Will the engine treat this IWAD as shareware? It refuses PWADs with
+// shareware (by design, since 1993). The engine picks the game MODE from
+// the episode lumps: Doom 1 family WADs without E3M1 or E4M1 run as
+// shareware. Doom II family WADs are never shareware.
+function engineWillTreatAsShareware(iwadName, bytes) {
+  const names = wadLumpNames(bytes) || new Set();
+  const doom2Family = ['doom2.wad', 'plutonia.wad', 'tnt.wad', 'hacx.wad',
+                       'freedm.wad', 'freedoom2.wad'];
+  if (doom2Family.indexOf(iwadName) !== -1 || names.has('MAP01')) return false;
+  return !names.has('E3M1') && !names.has('E4M1');
+}
+
+// The engine-facing name and shareware status of the chosen main WAD.
+let iwadName = 'doom.wad';
 let wadIsShareware = false;
 
 // Show or clear the setup-screen warning about shareware + PWADs. Returns
@@ -1414,10 +1448,10 @@ function updateSetupWarning() {
   const anyPwads = pwadData.some(function (p) { return p; });
   if (wadIsShareware && anyPwads) {
     warnEl.textContent =
-      'The selected main WAD is the shareware doom1.wad, and the engine ' +
-      'refuses add-on files with it (a vanilla rule, not a bug). Pick a ' +
-      'full IWAD (registered, retail, or Freedoom) or clear the PWAD ' +
-      'selection.';
+      'The selected main WAD is identified as shareware (episode 1 only, ' +
+      'no E3M1 or E4M1 maps), and the engine refuses add-on files with it ' +
+      '(a vanilla rule, not a bug). Pick a full IWAD such as doom.wad, ' +
+      'doom2.wad, or Freedoom, or clear the PWAD selection.';
     warnEl.style.display = 'block';
     return true;
   }
@@ -1434,7 +1468,10 @@ document.getElementById('wadfile').addEventListener('change', function (e) {
     // Uint8Array is a plain array of bytes, which is what the engine's virtual
     // filesystem expects.
     wadData = new Uint8Array(ev.target.result);
-    wadIsShareware = looksLikeSharewareIwad(wadData);
+    iwadName = chooseIwadName(file.name, wadData);
+    wadIsShareware = engineWillTreatAsShareware(iwadName, wadData);
+    console.log('IWAD will be presented to the engine as: ' + iwadName
+                + (wadIsShareware ? ' (shareware)' : ''));
     updateSetupWarning();
     startBtn.disabled = false;
   };
@@ -1841,12 +1878,13 @@ startBtn.addEventListener('click', function () {
     print: function (text) { engineLogPush(text); console.log(text); },
     printErr: function (text) { engineLogPush(text); console.warn(text); },
   }).then(function (Module) {
-    // Put the chosen WAD where the engine will look for it.
-    Module.FS.writeFile('/doom1.wad', wadData);
+    // Put the chosen WAD where the engine will look for it, under the name
+    // the engine should identify it by (see chooseIwadName).
+    Module.FS.writeFile('/' + iwadName, wadData);
 
     // Write any PWADs in next to it and build the engine's command line:
     // "-file a.wad b.wad" loads them on top of the IWAD, in order.
-    const wadArgs = ['-iwad', '/doom1.wad'];
+    const wadArgs = ['-iwad', '/' + iwadName];
     const loadedPwads = pwadData.filter(function (p) { return p; });
     if (loadedPwads.length > 0) {
       wadArgs.push('-file');

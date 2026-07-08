@@ -577,6 +577,18 @@ the crash and the game now runs.
     before starting, instead of letting the engine refuse after the screen
     has already switched over.
 
+### IWAD identity fix (same day, round six)
+
+32. Fixed a page bug that made the engine treat EVERY main WAD as shareware
+    Doom 1, including a real doom2.wad. The engine identifies IWADs by
+    filename first (its d_iwad.c name table; contents are only inspected
+    for unknown names), and the page had always presented the chosen file
+    to the engine as doom1.wad. The page now derives the correct
+    engine-facing name from the file's real name and its lump directory
+    (doom2.wad stays doom2.wad, a full Doom misnamed doom1.wad becomes
+    doom.wad, true shareware stays doom1.wad), so Doom II and Final Doom
+    WADs run as themselves and accept PWADs.
+
 ## Legal note
 
 The doomgeneric engine source, and the underlying Doom engine, is GPL licensed
@@ -681,6 +693,15 @@ legally own, or the freely distributable shareware `doom1.wad`.
     not exist" appears in the console at boot. Harmless: SDL tries to set
     its frame timing before the engine's main loop is registered a moment
     later. It has always been there and affects nothing.
+
+19. "You cannot -file with the shareware version" even though the main WAD
+    is a full doom.wad or doom2.wad. Old builds of this page presented
+    every chosen WAD to the engine under the name doom1.wad, and the
+    engine identifies WADs by filename, so everything ran as shareware
+    Doom 1. Fixed: the page now presents the WAD under its correct name
+    (check the console line "IWAD will be presented to the engine as").
+    If you still see this on a current build, your WAD really is the
+    shareware one; the setup screen warning will say so.
 
 13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game
