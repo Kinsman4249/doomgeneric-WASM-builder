@@ -1346,9 +1346,11 @@ cat > index.html << 'HTML_EOF'
   <p class="hint">
     One click loads a freely redistributable game from the pack that
     <code>install.sh</code> downloaded next to this page (nothing leaves
-    your machine; each game is only held in memory while you play). Chex
-    Quest, Harmony, WolfenDoom, and STRAIN run as total conversions over
-    Freedoom, merged properly so their graphics show. STRAIN is Alpha Dog
+    your machine; each game is only held in memory while you play). The Chex
+    Quest Trilogy button is Chex Quest 3: Vanilla Edition, a self-contained
+    backport of all three quests to this engine class. Harmony, WolfenDoom,
+    and STRAIN run as total conversions over Freedoom, merged properly so
+    their graphics show. STRAIN is Alpha Dog
     Alliance's legendary 1997 partial conversion; its distribution terms
     ask for the complete package to be included, so the original archive
     is stored untouched in the pack folder. WolfenDoom: First Encounter is
@@ -1872,8 +1874,7 @@ const FREEWARE_TITLES = [
   { key: 'freedoom1', label: 'Freedoom Phase 1',  iwad: 'freedoom1' },
   { key: 'freedoom2', label: 'Freedoom Phase 2',  iwad: 'freedoom2' },
   { key: 'hacx',      label: 'HACX 1.2',          iwad: 'hacx' },
-  { key: 'chex',      label: 'Chex Quest',        iwad: 'freedoom1', merge: ['chextc'], deh: ['chex_deh'] },
-  { key: 'chex2',     label: 'Chex Quest 2',      iwad: 'freedoom1', merge: ['chextc', 'newmaps'], deh: ['chex_deh'] },
+  { key: 'chex3v',    label: 'Chex Quest Trilogy', iwad: 'chex3v', deh: ['chex3v_deh'] },
   { key: 'harmony',   label: 'Harmony',           iwad: 'freedoom2', merge: ['harmonyc'], deh: ['harmony_deh'] },
   { key: 'wolfen1',   label: 'WolfenDoom: First Encounter', iwad: 'freedoom2', merge: ['wolfen1'] },
   { key: 'strain',    label: 'STRAIN',            iwad: 'freedoom2', merge: ['strain'], deh: ['strain_deh'] },
@@ -2785,15 +2786,15 @@ log "Stamped index.html: ${BUILD_STAMP}"
 # any repository) and packs each file as base64 inside a small .js file.
 # The page loads these with plain script tags, which work over file:// with
 # no server and no network, so the setup screen gets one-click buttons for:
-# Doom shareware, Freedoom Phase 1 and 2, HACX 1.2, Chex Quest 1 and 2
-# (total conversion over Freedoom), Harmony (over Freedoom Phase 2), and
-# WolfenDoom: First Encounter (over Freedoom Phase 2, with the author's
-# readme installed alongside as his distribution terms ask).
+# Doom shareware, Freedoom Phase 1 and 2, HACX 1.2, the Chex Quest Trilogy
+# (Chex Quest 3: Vanilla Edition, a self-contained IWAD), Harmony, STRAIN,
+# and WolfenDoom: First Encounter (the latter three over Freedoom Phase 2,
+# with authors' readmes installed alongside where their terms ask).
 # Roughly 125 MB on disk; each game only costs RAM when actually clicked.
 # Control with FREEWARE=1 (download) or FREEWARE=0 (skip); unset asks.
 if [ -z "${FREEWARE:-}" ]; then
   if [ -t 0 ]; then
-    read -r -p "Download the freeware game pack (~125 MB: Freedoom, shareware Doom, HACX, Chex Quest, Harmony, WolfenDoom, STRAIN)? [Y/n]: " FW_ANS
+    read -r -p "Download the freeware game pack (~125 MB: Freedoom, shareware Doom, HACX, Chex Quest Trilogy, Harmony, WolfenDoom, STRAIN)? [Y/n]: " FW_ANS
     case "${FW_ANS:-Y}" in
       [Yy]*|"") FREEWARE=1 ;;
       *)        FREEWARE=0 ;;
@@ -2827,12 +2828,16 @@ PLAN = [
                     "freedoom-0.13.0/freedoom2.wad", "freedoom2.wad"),
     ("hacx",        "https://www.gamers.org/pub/idgames/themes/hacx/hacx12.zip",
                     "HACX.WAD",      "hacx.wad"),
-    ("chextc",      "https://www.gamers.org/pub/idgames/themes/chex/chexq.zip",
-                    "chextc.wad",    "chextc.wad"),
-    ("chex_deh",    "https://www.gamers.org/pub/idgames/themes/chex/chexdeh.zip",
-                    "chex.deh",      "chex.deh"),
-    ("newmaps",     "https://www.gamers.org/pub/idgames/themes/chex/newmaps.zip",
-                    "newmaps.WAD",   "newmaps.wad"),
+    # Chex Quest 3: Vanilla Edition (Melodic Spaceship, 2024): the whole Chex
+    # trilogy backported to the vanilla engine as a self-contained IWAD. The
+    # external chex3.deh is the plain-DeHackEd patch its readme prescribes
+    # for Chocolate-class engines like this one.
+    ("chex3v",      "https://dsdarchive.com/files/wads/doom/4756/chex3v_1_0.zip",
+                    "chex3v.wad",    "chex3v.wad"),
+    ("chex3v_deh",  "https://dsdarchive.com/files/wads/doom/4756/chex3v_1_0.zip",
+                    "chex3.deh",     "chex3.deh"),
+    ("chex3v_readme", "https://dsdarchive.com/files/wads/doom/4756/chex3v_1_0.zip",
+                    "chex3v_readme.txt", "chex3v-readme.txt"),
     ("harmonyc",    "https://www.gamers.org/pub/idgames/levels/doom2/Ports/g-i/harmonyc.zip",
                     "HarmonyC.wad",  "harmonyc.wad"),
     ("harmony_deh", "https://www.gamers.org/pub/idgames/levels/doom2/Ports/g-i/harmonyc.zip",

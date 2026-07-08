@@ -13,9 +13,9 @@ What you get:
    uploaded anywhere.
 3. Optional one-click free games. If you let the installer download the
    freeware pack, the setup screen offers Doom shareware, Freedoom Phase 1
-   and 2, HACX, Chex Quest 1 and 2, Harmony, WolfenDoom: First Encounter,
-   and STRAIN as buttons, no files to find. They live next to the build,
-   never in any repository.
+   and 2, HACX, the Chex Quest Trilogy, Harmony, WolfenDoom: First
+   Encounter, and STRAIN as buttons, no files to find. They live next to
+   the build, never in any repository.
 4. In-browser key remapping, in addition to Doom's own in-game
    Options, Customize Controls menu.
 5. Window scaling with pixel filters. The game fills the browser window, and
@@ -289,8 +289,13 @@ actually playing it.
 
 - Doom Shareware, Freedoom Phase 1, Freedoom Phase 2, and HACX 1.2 load
   directly as their own IWADs.
-- Chex Quest and Chex Quest 2 load as total conversions over Freedoom Phase
-  1, merged so their graphics display, with the Chex DeHackEd patch applied.
+- The Chex Quest Trilogy button is Chex Quest 3: Vanilla Edition (Melodic
+  Spaceship, 2024), a self-contained backport of all three Chex Quests to
+  this exact engine class, loaded as its own IWAD with the plain-DeHackEd
+  patch its readme prescribes for Chocolate-class engines. Chex Quest was
+  a freeware cereal promotion, and Chex Quest 3 was made officially free by
+  General Mills in 2019; the backport's readme is installed in the pack
+  folder.
 - Harmony loads as a total conversion over Freedoom Phase 2 the same way.
 - WolfenDoom: First Encounter (Laz Rojas' faithful recreation of the
   Wolfenstein 3D demo episode) loads as a total conversion over Freedoom
@@ -768,6 +773,23 @@ the crash and the game now runs.
 51. Added Star Wars for Doom II (1998) to the read-up notes beside Aliens
     TC and Batman Doom: film property, so a link to its archive page
     rather than a download, by the same reasoning.
+
+### Chex Quest done right (round sixteen)
+
+52. Replaced the Chex Quest buttons after a user hit "R_InitTextures:
+    Missing patch in texture SKINSYMB". The old approach merged the 1990s
+    Chex total conversion over Freedoom Phase 1, but that TC's texture
+    directory references the REAL Ultimate Doom's internal patch names,
+    and Freedoom only guarantees matching texture names, not patch names,
+    so the vanilla texture loader died on the first mismatch. The other
+    TC stacks survive because their texture sets are self-contained.
+53. The replacement is strictly better: Chex Quest 3: Vanilla Edition
+    (Melodic Spaceship, 2024), a purpose-built backport of the entire Chex
+    trilogy to this exact engine class, running as its own self-contained
+    IWAD with its plain-DeHackEd companion patch, exactly as its readme
+    prescribes for Chocolate-class engines. No base WAD, no merging, no
+    patch-name mismatches possible. Verified: true IWAD with a complete
+    resource set, decodes intact from the pack.
 
 ## Performance notes
 
