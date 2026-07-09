@@ -1150,48 +1150,172 @@ cat > index.html << 'HTML_EOF'
 <meta charset="utf-8">
 <title>DOOM</title>
 <style>
-  /* Make the page fill the whole browser window with a black background. */
-  html, body { margin: 0; height: 100%; }
-  body { background: #000; color: #ddd; font-family: monospace; }
-
-  /* The setup screen (WAD picker + key bindings) shown before the game runs. */
-  #setup { max-width: 520px; margin: 48px auto; padding: 0 16px; }
-  #setup h3 { margin-bottom: 6px; }
-  #keybinds label { display: block; margin: 6px 0; }
-  #keybinds input { width: 120px; }
-  .hint { font-size: 0.85em; opacity: 0.7; }
-  /* Setup-screen warning (for example shareware WAD + PWADs selected). */
-  #setupwarn {
-    display: none;               /* shown from JavaScript when relevant */
-    padding: 8px 12px;
-    border: 1px solid #a33;
-    border-radius: 6px;
-    background: rgba(60, 10, 10, 0.5);
-    color: #f2b8b8;
-    font-size: 0.9em;
-  }
-  button { font-family: monospace; cursor: pointer; }
-
   /*
-   * The "stage" is a full-window black box that holds the game canvas and
-   * centers it. It is hidden until the game starts. Because it fills the
-   * viewport (position: fixed; inset: 0), the canvas can be scaled to fill
-   * as much of the window as the chosen aspect ratio allows.
+   * Styled after the Doom fan pages of 1997: black void, beveled gray
+   * chrome, Impact masthead, Times prose, Courier controls, flame rules,
+   * an LED hit counter. All pure CSS: id Software never released free
+   * fan-site art for classic Doom, so no copyrighted assets are shipped,
+   * and the page keeps working offline over file://.
    */
+  html, body { margin: 0; height: 100%; }
+  body {
+    color: #b0b0b0;
+    font-family: "Times New Roman", Times, serif;
+    background: #050505;
+    background-image: repeating-linear-gradient(
+      45deg, #050505 0, #050505 6px, #0a0a0a 6px, #0a0a0a 12px);
+  }
+
+  /* -------- the fan-page panel -------- */
+  #setup {
+    max-width: 620px;
+    margin: 20px auto;
+    padding: 4px 14px 16px;
+    background: #000;
+    border: 4px ridge #707070;
+  }
+  .masthead { text-align: center; margin: 10px 0 2px; }
+  .masthead h1 {
+    margin: 0;
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 44px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #ff2a00;
+    text-shadow: 2px 2px 0 #5a0000, 4px 4px 0 #1a0000, 0 0 18px #ff450033;
+  }
+  .masthead h1 .thin {
+    font-family: "Times New Roman", serif;
+    font-style: italic;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: #c0c0c0;
+    text-transform: lowercase;
+    text-shadow: none;
+  }
+  .tagline {
+    margin: 2px 0 8px;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+  }
+  hr.flame {
+    border: 0;
+    height: 4px;
+    margin: 6px 0 2px;
+    background: linear-gradient(90deg, #1a0000, #ff4500, #ffcc00, #ff4500, #1a0000);
+  }
+
+  /* -------- beveled section boxes -------- */
+  .box {
+    border: 2px groove #6a6a6a;
+    background: #0a0a0a;
+    margin: 12px 0;
+    padding: 6px 10px 8px;
+  }
+  .boxtitle {
+    font-family: "Courier New", monospace;
+    font-weight: bold;
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: #ffcc00;
+    margin: 2px 0 6px;
+  }
+  .box p { margin: 6px 0; }
+  label { font-family: "Courier New", monospace; font-size: 13px; }
+
+  /* -------- retro widgets -------- */
+  input[type="file"], select, button {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #000;
+    background: #c0c0c0;
+    border: 2px outset #e8e8e8;
+  }
+  button { cursor: pointer; padding: 1px 10px; }
+  #setup select { width: auto; max-width: 240px; }
+  button:active { border-style: inset; }
+  input[type="text"], #keybinds input {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #9f9;
+    background: #101010;
+    border: 2px inset #555;
+    width: 110px;
+  }
+  a { color: #ffcc00; }
+  a:visited { color: #cc9900; }
+  a:hover { color: #ff4500; }
+
+  #keybinds {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 14px;
+  }
+  #keybinds label { display: block; margin: 2px 0; }
+
+  .hint { font-size: 11px; color: #7a7a7a; font-family: Verdana, Arial, sans-serif; }
+
+  #setupwarn {
+    display: none;
+    padding: 8px 12px;
+    border: 2px inset #a33;
+    background: rgba(60, 10, 10, 0.6);
+    color: #f2b8b8;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+  }
+
+  .startrow { text-align: center; margin: 16px 0 8px; }
+  #startBtn {
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 24px;
+    letter-spacing: 2px;
+    padding: 6px 34px;
+    color: #fff;
+    background: #7a0000;
+    border: 4px outset #b33;
+    text-transform: uppercase;
+  }
+  #startBtn:disabled { color: #866; background: #2a0000; border-color: #533; cursor: default; }
+  #startBtn:not(:disabled):hover { background: #a00000; }
+
+  .badges { text-align: center; margin: 10px 0 4px; }
+  .badge {
+    display: inline-block;
+    margin: 2px 3px;
+    padding: 2px 7px;
+    border: 1px solid #444;
+    background: #101010;
+    color: #6a6a6a;
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  /* The build stamp, dressed as a 1997 hit counter. */
+  #buildinfo {
+    display: block;
+    text-align: center;
+    margin: 6px auto 0;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    color: #00dd44;
+    background: #030903;
+    border: 2px inset #333;
+    padding: 3px 8px;
+  }
+
+  /* -------- the game stage (functional, unchanged behavior) -------- */
   #stage {
     position: fixed;
-    inset: 0;                 /* top/right/bottom/left all 0 => fill window */
+    inset: 0;
     background: #000;
-    display: none;            /* flipped to "flex" when the game starts */
-    align-items: center;      /* vertical centering of the canvas */
-    justify-content: center;  /* horizontal centering of the canvas */
+    display: none;
+    align-items: center;
+    justify-content: center;
     overflow: hidden;
   }
-
-  /*
-   * The small control bar floating at the top of the stage. It lets you switch
-   * the pixel filter, aspect ratio, and toggle fullscreen while playing.
-   */
   #hud {
     position: absolute;
     top: 8px;
@@ -1202,101 +1326,69 @@ cat > index.html << 'HTML_EOF'
     gap: 14px;
     align-items: center;
     padding: 6px 12px;
-    border-radius: 8px;
+    border: 2px ridge #555;
     background: rgba(0, 0, 0, 0.6);
     font-size: 13px;
-    opacity: 0.07;            /* nearly invisible during play... */
+    opacity: 0.07;
     transition: opacity 0.15s ease;
   }
-  /* ...until the mouse is over it (or a control in it has focus). */
   #hud:hover, #hud:focus-within { opacity: 1; }
-  #hud label { display: inline-flex; align-items: center; gap: 5px; }
-  #hud select, #hud button { font-family: monospace; font-size: 13px; }
-
-  /*
-   * The canvas the game draws into. Its "backing store" size (the actual pixel
-   * grid) is fixed by the engine (e.g. 640x400). We only change its DISPLAYED
-   * size via CSS width/height from JavaScript, which is what scales it to the
-   * window. The two filter presets below control how that scaling looks.
-   */
-  #canvas {
-    display: block;
-    background: #000;
-    /* Size (width/height) is set from JavaScript in applyScaling(). */
-  }
-  /* "Crisp" preset: nearest-neighbour scaling => big, sharp original pixels. */
-  #canvas.crisp { image-rendering: pixelated; }
-  /* "Smooth" preset: the browser's default smoothing (bilinear) => softer. */
-  #canvas.smooth { image-rendering: auto; }
-
-  /*
-   * GPU filter output canvas. When an advanced filter (hq2x, xBR, DCCI) is
-   * active, the game canvas turns invisible (but keeps receiving clicks)
-   * and this canvas shows the filtered image in the exact same spot.
-   * pointer-events: none lets every click fall through to the game canvas.
-   */
-  #filtercanvas {
-    display: none;
-    position: absolute;
-    z-index: 1;
-    pointer-events: none;
-    image-rendering: auto;      /* final scale from 2x is smoothed */
-    background: #000;
-  }
-
-  /* FPS readout, top-right corner. Shown while the HUD's FPS box is
-     checked. The number is rendered frames per second, sampled once a
-     second from a counter inside the engine itself. */
+  #hud label { display: inline-flex; align-items: center; gap: 5px; color: #b0b0b0; }
+  #hud select, #hud button { font-family: "Courier New", monospace; font-size: 13px; }
   #fpsbox {
-    display: none;               /* toggled from JavaScript */
+    display: none;
     position: absolute;
     top: 8px;
     right: 10px;
     z-index: 10;
     padding: 4px 8px;
-    border-radius: 6px;
+    border: 1px solid #333;
     background: rgba(0, 0, 0, 0.6);
     color: #8f8;
+    font-family: "Courier New", monospace;
     font-size: 13px;
   }
-
-  /*
-   * Mouse-capture hint: shown at the bottom of the stage while the game is
-   * running but the mouse is not captured (pointer lock not active). Hidden
-   * automatically the moment the mouse is captured.
-   */
   #mousehint {
-    display: none;               /* toggled from JavaScript */
+    display: none;
     position: absolute;
     bottom: 14px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 10;
     padding: 6px 12px;
-    border-radius: 8px;
+    border: 1px solid #333;
     background: rgba(0, 0, 0, 0.65);
     color: #cfc;
+    font-family: "Courier New", monospace;
     font-size: 13px;
     white-space: nowrap;
   }
-
-  /* Fatal-error box: shown centered over the stage if the engine fails to
-     start, so the failure is readable instead of a silent black screen. */
+  #canvas { display: block; background: #000; }
+  #canvas.crisp { image-rendering: pixelated; }
+  #canvas.smooth { image-rendering: auto; }
+  #filtercanvas {
+    display: none;
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    image-rendering: auto;
+    background: #000;
+  }
   #errbox {
-    display: none;               /* flipped to "block" by showFatalError() */
+    display: none;
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 20;                 /* above the canvas and the control bar */
+    z-index: 20;
     max-width: 640px;
     padding: 14px 18px;
-    border: 1px solid #a33;
-    border-radius: 8px;
+    border: 2px inset #a33;
     background: rgba(40, 0, 0, 0.92);
     color: #f2c9c9;
+    font-family: "Courier New", monospace;
     font-size: 13px;
-    white-space: pre-wrap;       /* keep the message's line breaks */
+    white-space: pre-wrap;
   }
 </style>
 </head>
@@ -1304,88 +1396,35 @@ cat > index.html << 'HTML_EOF'
 
 <!-- ==================== SETUP SCREEN ==================== -->
 <div id="setup">
-  <h1>DOOM in the browser</h1>
+  <div class="masthead">
+    <h1>DOOM <span class="thin">in your</span> BROWSER</h1>
+    <p class="tagline">*** the genuine 1993 engine * no install * no server * just play ***</p>
+  </div>
+  <hr class="flame">
 
-  <h3>1. Load a WAD</h3>
-  <input type="file" id="wadfile" accept=".wad">
-  <p class="hint">
-    Use a WAD you legally own, or the freely redistributable shareware
-    <code>doom1.wad</code>. Nothing is uploaded anywhere; the file stays in
-    your browser.
-  </p>
-  <p>
-    <label>Optional PWADs (mods, maps): <input type="file" id="pwadfiles" accept=".wad" multiple></label>
-    &nbsp;
-    <label><input type="checkbox" id="mergePwads"> load as total conversion (merge)</label>
-  </p>
-  <p class="hint">
-    PWADs load on top of the main WAD (the engine's <code>-file</code>
-    option), in the order selected. They need a full IWAD: the shareware
-    <code>doom1.wad</code> refuses add-on files by design. This engine uses
-    the plain vanilla loader, so PWADs that replace sprites or floor
-    textures may not show those replacements. For total conversions that
-    replace sprites and flats, tick "load as total conversion": that uses
-    the engine's merge loader instead, which folds the graphics in
-    properly. PWADs that carry a DEHACKED lump have it applied
-    automatically either way.
-  </p>
-  <p>
-    <label>Optional DeHackEd patches (.deh): <input type="file" id="dehfiles" accept=".deh,.bex" multiple></label>
-  </p>
-  <p class="hint">
-    DeHackEd patches change monster behavior, weapon stats, and text; many
-    classic mods ship one next to their PWAD. Applied in selection order
-    with the engine's <code>-deh</code> option, after the main WAD's own
-    patch and before PWAD DEHACKED lumps, matching classic load order.
-    Files keep their names, so Chex Quest's required patch works if the
-    file is named <code>chex.deh</code>. The HACX 1.2 IWAD needs nothing
-    here; its built-in patch loads by itself.
-  </p>
+  <div class="box">
+    <div class="boxtitle">&raquo; 1. PICK YOUR GAME &laquo;</div>
+    <p id="freegames"></p>
+    <p class="hint" id="freegamesStatus"></p>
+    <p><label>...or your own WAD: <input type="file" id="wadfile" accept=".wad"></label></p>
+    <p>
+      <label>PWADs: <input type="file" id="pwadfiles" accept=".wad" multiple></label>
+      <label><input type="checkbox" id="mergePwads"> total conversion (merge)</label>
+    </p>
+    <p><label>DeHackEd: <input type="file" id="dehfiles" accept=".deh,.bex" multiple></label></p>
+    <p class="hint">Chex episodes = the three quests. Everything else you might
+      wonder about lives in the README. Legendary but licensing-murky, read up
+      before hunting them down:
+      <a href="https://doomwiki.org/wiki/Aliens_TC" target="_blank" rel="noopener noreferrer">Aliens TC</a> *
+      <a href="https://doomwiki.org/wiki/Batman_Doom" target="_blank" rel="noopener noreferrer">Batman Doom</a> *
+      <a href="https://www.doomworld.com/files/file/9761-star-wars-for-doom2-v133-final-release/" target="_blank" rel="noopener noreferrer">Star Wars</a></p>
+  </div>
 
-  <h3>Or pick a free game (no files needed)</h3>
-  <p class="hint">
-    One click loads a freely redistributable game from the pack that
-    <code>install.sh</code> downloaded next to this page (nothing leaves
-    your machine; each game is only held in memory while you play). The Chex
-    Quest Trilogy button is Chex Quest 3: Vanilla Edition, a self-contained
-    backport of all three quests to this engine class: despite the title
-    screen saying Chex Quest 3, pick New Game and the episodes ARE the
-    games (Episode 1 is Chex Quest, Episode 2 is Chex Quest 2, Episode 3
-    is Chex Quest 3's new campaign). Harmony, WolfenDoom,
-    and STRAIN run as total conversions over Freedoom, merged properly so
-    their graphics show. STRAIN is Alpha Dog
-    Alliance's legendary 1997 partial conversion; its distribution terms
-    ask for the complete package to be included, so the original archive
-    is stored untouched in the pack folder. WolfenDoom: First Encounter is
-    Laz Rojas' faithful recreation of the Wolfenstein 3D demo episode, a
-    fan work distributed with the author's stated permission (his readme is
-    installed in the pack folder). Loading a title replaces any manually
-    picked files above.
-  </p>
-  <p id="freegames"></p>
-  <p class="hint" id="freegamesStatus"></p>
-  <p class="hint">
-    Worth knowing about, deliberately NOT downloadable here: some of the most
-    famous total conversions ever made run on this engine class, but they
-    are based on film and comics properties, so their licensing is murkier
-    than the pack above. Read up and decide for yourself:
-    <a href="https://doomwiki.org/wiki/Aliens_TC" target="_blank" rel="noopener noreferrer">Aliens TC (1994)</a>,
-    <a href="https://doomwiki.org/wiki/Batman_Doom" target="_blank" rel="noopener noreferrer">Batman Doom (1999, ACE Team)</a>,
-    and
-    <a href="https://www.doomworld.com/files/file/9761-star-wars-for-doom2-v133-final-release/" target="_blank" rel="noopener noreferrer">Star Wars for Doom II (1998)</a>.
-    If you obtain one, load its WAD through the PWAD picker above with
-    "load as total conversion" ticked (Aliens TC over a Doom 1 class IWAD,
-    Batman Doom over a Doom 2 class IWAD plus its .deh file).
-  </p>
-
-  <h3>2. Controls</h3>
-  <p class="hint">
-    The mouse turns and looks up/down once you click the game to capture it
-    (Esc releases it). <b>Both mouse buttons shoot.</b> Keyboard defaults:
-    WASD movement with A/D strafing (the mouse covers turning), F also
-    shoots, E opens doors and presses switches.
-  </p>
-  <div id="keybinds">
+  <div class="box">
+    <div class="boxtitle">&raquo; 2. CONTROLS &laquo;</div>
+    <p class="hint">Mouse aims, both buttons fire, Esc releases. Names below are
+      KeyboardEvent.code values.</p>
+    <div id="keybinds">
     <label>Move Forward: <input id="bind-up"     value="KeyW"></label>
     <label>Move Backward: <input id="bind-down"   value="KeyS"></label>
     <label>Strafe Left: <input id="bind-sleft"  value="KeyA"></label>
@@ -1395,17 +1434,17 @@ cat > index.html << 'HTML_EOF'
     <label>Fire: <input id="bind-fire"   value="KeyF"></label>
     <label>Use / Open (doors, switches): <input id="bind-use" value="KeyE"></label>
   </div>
-  <p class="hint">
-    Values are JavaScript <code>KeyboardEvent.code</code> names (for example
-    <code>KeyW</code>, <code>ArrowUp</code>, <code>Space</code>,
-    <code>ControlLeft</code>).
-  </p>
+    <p>
+      <label><input type="checkbox" id="rawInput" checked> raw input</label>
+      &nbsp;&nbsp;
+      <label><input type="checkbox" id="invertLook"> invert look</label>
+    </p>
+  </div>
 
-  <h3>3. Display</h3>
-  <p>
-    <label>
-      Pixel filter:
-      <select id="filterMode">
+  <div class="box">
+    <div class="boxtitle">&raquo; 3. VIDEO &amp; FEEL &laquo;</div>
+    <p>
+      <label>Filter: <select id="filterMode">
         <option value="crisp" selected>Crisp (original pixels)</option>
         <option value="smooth">Smooth</option>
         <option value="hq2x">hq2x (GPU)</option>
@@ -1414,21 +1453,15 @@ cat > index.html << 'HTML_EOF'
         <option value="xbr4x">xBR 4x (GPU, strongest)</option>
         <option value="dcci2x">DCCI 2x (GPU)</option>
         <option value="dcci4x">DCCI 4x (GPU, strongest)</option>
-      </select>
-    </label>
-    &nbsp;&nbsp;
-    <label>
-      Aspect:
-      <select id="aspectMode">
+      </select></label>
+      &nbsp;
+      <label>Aspect: <select id="aspectMode">
         <option value="4:3" selected>4:3 (original look)</option>
         <option value="square">Square pixels (fill by buffer)</option>
-      </select>
-    </label>
-  </p>
-  <p>
-    <label>
-      Horizontal sensitivity:
-      <select id="sensXMode">
+      </select></label>
+    </p>
+    <p>
+      <label>Sens X: <select id="sensXMode">
         <option value="0.25">Extra low</option>
         <option value="0.5">Low</option>
         <option value="1">Normal</option>
@@ -1436,12 +1469,9 @@ cat > index.html << 'HTML_EOF'
         <option value="2">Higher</option>
         <option value="3">Very high</option>
         <option value="4.5">Extra high</option>
-      </select>
-    </label>
-    &nbsp;&nbsp;
-    <label>
-      Vertical sensitivity:
-      <select id="sensYMode">
+      </select></label>
+      &nbsp;
+      <label>Sens Y: <select id="sensYMode">
         <option value="0.25">Extra low</option>
         <option value="0.5" selected>Low</option>
         <option value="1">Normal</option>
@@ -1449,41 +1479,21 @@ cat > index.html << 'HTML_EOF'
         <option value="2">Higher</option>
         <option value="3">Very high</option>
         <option value="4.5">Extra high</option>
-      </select>
-    </label>
-  </p>
-  <p>
-    <label>
-      <input type="checkbox" id="rawInput" checked> Raw input (disable mouse acceleration)
-    </label>
-    &nbsp;&nbsp;
-    <label>
-      <input type="checkbox" id="invertLook"> Invert mouse look
-    </label>
-  </p>
-  <p class="hint">
-    Raw input asks the browser for unaccelerated mouse motion, so a flick of
-    the wrist moves the same amount no matter how fast you flick. Not every
-    browser supports it; if yours refuses, the game quietly falls back to
-    normal (accelerated) motion. Changing it takes effect the next time you
-    capture the mouse.
-  </p>
-  <p class="hint">
-    You can change filter, aspect, and sensitivity at any time while playing
-    using the bar at the top of the screen (press Esc first to free the
-    mouse). "Crisp" keeps the classic chunky pixels; "Smooth" blends them.
-  </p>
+      </select></label>
+    </p>
+  </div>
 
   <!-- Shown when the current WAD selection cannot start (see JavaScript). -->
   <p id="setupwarn"></p>
 
-  <p>
+  <p class="startrow">
     <button id="startBtn" disabled>Start DOOM</button>
   </p>
 
-  <!-- Filled from JavaScript with the build stamp injected by install.sh.
-       If this line is missing or shows an old date, the browser is showing
-       a stale or cached copy of the page. -->
+  <div class="badges">
+    <span class="badge">100% VANILLA ENGINE</span><span class="badge">GPL SOURCE SINCE 1997</span><span class="badge">BEST VIEWED IN ANY BROWSER</span><span class="badge">NO COOKIES * NO TRACKING * NO SERVER</span>
+  </div>
+  <!-- Filled from JavaScript with the build stamp injected by install.sh. -->
   <p class="hint" id="buildinfo"></p>
 </div>
 

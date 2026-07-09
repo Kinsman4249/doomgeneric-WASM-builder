@@ -825,6 +825,19 @@ the crash and the game now runs.
     just above the 35 Hz at which Doom's picture can actually change.
     Filter cost is now independent of the frame buffer setting.
 
+### The 1997 fan page look (round nineteen)
+
+60. Restyled the setup screen as a Doom fan page circa 1997: black void,
+    diagonal-hatch backdrop, beveled gray boxes, Impact masthead with a
+    flame rule, Courier controls, yellow links, badge row, and the build
+    stamp dressed as a green LED hit counter. Pure CSS: id Software never
+    released free fan-site art for classic Doom (verified), so no
+    copyrighted assets are shipped and the page keeps working offline.
+61. The setup screen's explanatory text was cut to one-liners; everything
+    it used to say lives in this README (controls detail, mod loading
+    rules, sensitivity and raw input notes, Chex episode mapping, filter
+    descriptions).
+
 ## Performance notes
 
 What the build does for speed, and what to expect on heavy maps:
