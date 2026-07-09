@@ -20,8 +20,8 @@ What you get:
    Options, Customize Controls menu.
 5. Window scaling with pixel filters. The game fills the browser window, and
    you choose between "Crisp" (the classic chunky pixels), "Smooth"
-   (softened), and three GPU upscalers, each in 2x and stronger 4x
-   variants: "hq2x/hq4x", "xBR", and "DCCI". Switch live while playing.
+   (softened), and three GPU upscalers in 2x, 4x, and 8x variants: hq2x,
+   xBR, and DCCI. Switch live while playing.
 6. Full mouse look, GZDoom style. Click the game to capture the mouse: moving
    it turns AND looks up and down, and both mouse buttons shoot. Horizontal
    and vertical sensitivity are separate (seven steps each), and raw input
@@ -205,7 +205,10 @@ strength. It offers:
      pixels for a softer image.
    - "hq2x", "xBR", and "DCCI" are GPU upscalers (WebGL shaders) with
      edge-aware interpolation, the same family of filters emulators use,
-     each in a 2x and a stronger 4x (double-pass) variant. The engine
+     each in 2x, 4x, and 8x variants (the filter applied one, two, or
+     three times over). 8x pays off mainly on large or high-DPI displays,
+     where it replaces the browser's final blur-up with filter-built
+     detail; on a laptop screen 4x usually looks the same. The engine
      always renders the classic 320x200 picture internally, so the shaders
      recover that true image through the engine's integer enlargement and
      upscale it properly; earlier versions filtered the already-fattened
@@ -853,6 +856,10 @@ the crash and the game now runs.
     upscaling (display scaling, Smooth, the GPU filters) happens in the
     page from the true picture, and Smooth finally looks properly smooth
     because it blends real pixels instead of pre-fattened ones.
+64. Added an 8x tier to every GPU filter (hq8x, xBR 8x, DCCI 8x): a third
+    filter pass producing a 2560x1600 image, run through ping-pong
+    framebuffers. Worth it on large or high-DPI displays; the 41 updates
+    a second throttle keeps the cost bounded.
 
 ## Performance notes
 

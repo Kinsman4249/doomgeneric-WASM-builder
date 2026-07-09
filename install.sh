@@ -1379,11 +1379,14 @@ cat > index.html << 'HTML_EOF'
         <option value="crisp" selected>Crisp (original pixels)</option>
         <option value="smooth">Smooth</option>
         <option value="hq2x">hq2x (GPU)</option>
-        <option value="hq4x">hq4x (GPU, strongest)</option>
+        <option value="hq4x">hq4x (GPU)</option>
+        <option value="hq8x">hq8x (GPU, max)</option>
         <option value="xbr2x">xBR 2x (GPU)</option>
-        <option value="xbr4x">xBR 4x (GPU, strongest)</option>
+        <option value="xbr4x">xBR 4x (GPU)</option>
+        <option value="xbr8x">xBR 8x (GPU, max)</option>
         <option value="dcci2x">DCCI 2x (GPU)</option>
-        <option value="dcci4x">DCCI 4x (GPU, strongest)</option>
+        <option value="dcci4x">DCCI 4x (GPU)</option>
+        <option value="dcci8x">DCCI 8x (GPU, max)</option>
       </select></label>
       &nbsp;
       <label>Aspect: <select id="aspectMode">
@@ -1438,10 +1441,13 @@ cat > index.html << 'HTML_EOF'
         <option value="smooth">Smooth</option>
         <option value="hq2x">hq2x</option>
         <option value="hq4x">hq4x</option>
+        <option value="hq8x">hq8x</option>
         <option value="xbr2x">xBR 2x</option>
         <option value="xbr4x">xBR 4x</option>
+        <option value="xbr8x">xBR 8x</option>
         <option value="dcci2x">DCCI 2x</option>
         <option value="dcci4x">DCCI 4x</option>
+        <option value="dcci8x">DCCI 8x</option>
       </select>
     </label>
     <label>Aspect:
@@ -2190,10 +2196,13 @@ let activeGpuFilter = null;
 const GPU_FILTER_MODES = {
   hq2x:   { prog: 'hq2x', passes: 1 },
   hq4x:   { prog: 'hq2x', passes: 2 },
+  hq8x:   { prog: 'hq2x', passes: 3 },
   xbr2x:  { prog: 'xbr',  passes: 1 },
   xbr4x:  { prog: 'xbr',  passes: 2 },
+  xbr8x:  { prog: 'xbr',  passes: 3 },
   dcci2x: { prog: 'dcci', passes: 1 },
   dcci4x: { prog: 'dcci', passes: 2 },
+  dcci8x: { prog: 'dcci', passes: 3 },
 };
 
 function setFilter(mode) {
@@ -2527,19 +2536,23 @@ function gpuFilterReady() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    // Intermediate texture + framebuffer for the two-pass (4x) modes.
-    glFilter.midTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, glFilter.midTex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    glFilter.midW = 0;
-    glFilter.midH = 0;
-    glFilter.fbo = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, glFilter.fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
-                            gl.TEXTURE_2D, glFilter.midTex, 0);
+    // Two ping-pong intermediates for the multi-pass (4x and 8x) modes:
+    // pass N reads one and writes the other, so a texture is never sampled
+    // while it is the render target.
+    glFilter.slots = [];
+    for (let i = 0; i < 2; i++) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+                              gl.TEXTURE_2D, tex, 0);
+      glFilter.slots.push({ tex: tex, fbo: fbo, w: 0, h: 0 });
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     glFilter.gl = gl;
     glFilter.ok = true;
@@ -2591,7 +2604,7 @@ function gpuFilterFrame() {
   glFilter.lastTime = now;
 
   const logical = logicalSourceSize(bw, bh);
-  const scale = activeGpuFilter.passes === 2 ? 4 : 2;
+  const scale = 1 << activeGpuFilter.passes;   // 2x, 4x, or 8x
   const ow = logical.w * scale, oh = logical.h * scale;
   if (filtercanvas.width !== ow || filtercanvas.height !== oh) {
     filtercanvas.width = ow;
@@ -2620,23 +2633,31 @@ function gpuFilterFrame() {
   }
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, glFilter.stage);
 
-  if (activeGpuFilter.passes === 1) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    runFilterPass(activeGpuFilter.prog, glFilter.tex, logical.w, logical.h, ow, oh);
-  } else {
-    // 4x: filter to an intermediate 2x texture, then filter that again.
-    const mw = logical.w * 2, mh = logical.h * 2;
-    if (glFilter.midW !== mw || glFilter.midH !== mh) {
-      gl.bindTexture(gl.TEXTURE_2D, glFilter.midTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, mw, mh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      glFilter.midW = mw;
-      glFilter.midH = mh;
+  // Run the filter once per pass, doubling each time: source texture into
+  // ping-pong intermediates, final pass onto the visible canvas.
+  let srcTex = glFilter.tex;
+  let sw = logical.w, sh = logical.h;
+  for (let i = 0; i < activeGpuFilter.passes; i++) {
+    const tw = sw * 2, th = sh * 2;
+    if (i === activeGpuFilter.passes - 1) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      runFilterPass(activeGpuFilter.prog, srcTex, sw, sh, tw, th);
+    } else {
+      const slot = glFilter.slots[i % 2];
+      if (slot.w !== tw || slot.h !== th) {
+        gl.bindTexture(gl.TEXTURE_2D, slot.tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, tw, th, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        slot.w = tw;
+        slot.h = th;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, slot.fbo);
+      runFilterPass(activeGpuFilter.prog, srcTex, sw, sh, tw, th);
+      srcTex = slot.tex;
     }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, glFilter.fbo);
-    runFilterPass(activeGpuFilter.prog, glFilter.tex, logical.w, logical.h, mw, mh);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    runFilterPass(activeGpuFilter.prog, glFilter.midTex, mw, mh, ow, oh);
+    sw = tw;
+    sh = th;
   }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 requestAnimationFrame(gpuFilterFrame);
 
