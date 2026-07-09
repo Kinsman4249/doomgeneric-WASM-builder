@@ -121,7 +121,7 @@ picture regardless of this setting.
 
 1. Click "Load a WAD" and pick a `.wad` file. Use one you legally own, or the
    freely redistributable shareware `doom1.wad`. Optionally add PWADs (see
-   "Loading PWADs" below).
+   "Loading PWADs and DeHackEd patches" below).
 2. Optionally edit the key bindings (see "Default controls" below) and the
    mouse sensitivity or invert setting.
 3. Optionally pick a pixel filter and aspect ratio. You can also change these
@@ -250,10 +250,12 @@ Two vanilla-engine caveats:
 1. PWADs need a full IWAD (registered, retail, Freedoom, and so on). The
    shareware `doom1.wad` refuses add-on files by design; the setup screen
    catches that combination before starting.
-2. This engine uses the plain vanilla WAD loader (there is no `-merge`
-   support in doomgeneric's file set), so PWADs that replace sprites or
-   floor textures may not display those replacements. Map and level PWADs
-   work as expected.
+2. Plain `-file` loading cannot fold a PWAD's replacement sprites and
+   flats into the game; that is a vanilla WAD-loader fact. For total
+   conversions that replace graphics, tick "total conversion (merge)"
+   next to the PWAD picker: it uses the restored `-merge` loader instead,
+   which handles them properly. Plain map and level PWADs are fine either
+   way.
 
 DeHackEd is fully supported. DeHackEd patches (.deh files) are how classic
 mods change monster behavior, weapon stats, and game text. The build
@@ -266,9 +268,10 @@ keeping all the integration code), which enables all of the following:
 3. The HACX 1.2 standalone IWAD works: the engine recognizes `hacx.wad`
    and loads its built-in DEHACKED lump by itself.
 4. Freedoom's built-in DEHACKED lump now applies, so its texts are correct.
-5. Chex Quest works if you add its required patch through the picker with
-   the filename `chex.deh` (files keep their names exactly for this
-   reason).
+5. The ORIGINAL 1996 `chex.wad` IWAD, if you supply it yourself, works
+   when you also add its required patch through the picker with the exact
+   filename `chex.deh` (files keep their names for this reason). The Chex
+   Quest Trilogy button needs none of this; it ships its own patch.
 6. Load order matches classic behavior: the IWAD's own patch first, then
    your .deh files, then PWAD DEHACKED lumps.
 
@@ -313,18 +316,19 @@ Loading a free game replaces anything you picked by hand above. If a button
 reports the game is missing, re-run `install.sh` and answer yes to the
 freeware pack (it only downloads what is not already there).
 
-Chex Quest 3 is deliberately absent: it is a ZDoom-engine game (Hexen map
-format, DECORATE, MAPINFO) that a vanilla engine cannot run, so shipping a
-button for it would only produce a broken load.
+(The ORIGINAL Chex Quest 3 release is a ZDoom-engine game, Hexen map
+format and all, which a vanilla engine cannot run. That is exactly why the
+pack ships the Vanilla Edition backport above instead of the original.)
 
 Merging total conversions is possible because the build also restores the
 engine's `-merge` support (see "What is patched in the engine source"),
 which folds a PWAD's sprites and flats into the IWAD the way the classic
-deutex tool did. This is what lets Chex Quest and Harmony look right rather
-than showing Doom or Freedoom graphics. The same loader is available for
-your own files: tick "load as total conversion" next to the PWAD picker.
+deutex tool did. This is what lets Harmony, WolfenDoom, and STRAIN look
+right rather than showing Freedoom graphics. The same loader is available
+for your own files: tick "total conversion (merge)" next to the PWAD
+picker.
 
-Two famous total conversions are linked from the setup screen as reading
+A few famous total conversions are linked from the setup screen as reading
 material but deliberately NOT offered as downloads: Aliens TC (1994),
 Batman Doom (1999, ACE Team), and Star Wars for Doom II (1998). All run on
 this engine class, but all are based on film and comics properties, so
@@ -344,15 +348,15 @@ into a sector with a Boom-only sector type stops the game with
 vanilla, limit-removing, or complevel 2/3; "Boom" or "complevel 9" WADs are
 out of scope for this engine.
 
-### Why the on-screen size scales but the internal resolution does not
+### Why the on-screen size scales at runtime but the rendering does not
 
-Doom's software renderer draws into a pixel buffer whose size is fixed when the
-game is compiled (640x400 by default). That size cannot change while the game is
-running, so the game cannot re-render itself to match the window in real time.
-Instead, the page scales that finished buffer up to fill the window using CSS,
-and the pixel-filter presets decide how that upscaling looks. If you want a
-higher internal resolution, rebuild with `DOOM_RESX` and `DOOM_RESY` as
-described above.
+The vanilla renderer always draws the game at 320x200; the engine enlarges
+that by a whole-number factor into a frame buffer whose size is fixed at
+compile time (see "Choosing the frame buffer size" above). Neither can
+change while the game runs, so the page scales the finished buffer to fill
+the window using CSS, and the pixel filters decide how that scaling looks.
+The GPU filters recover the true 320x200 image first, so they are
+unaffected by any of this.
 
 ## What is patched in `Makefile.emscripten`
 
@@ -838,6 +842,18 @@ the crash and the game now runs.
     rules, sensitivity and raw input notes, Chex episode mapping, filter
     descriptions).
 
+### Consistency audit before going public (round twenty)
+
+62. Swept the README and installer for claims that later rounds had made
+    stale: the "no -merge support" caveat (merge was restored in round
+    ten), the "Chex Quest 3 is deliberately absent" note (the Trilogy
+    button IS the Vanilla Edition backport), the merge explanation naming
+    Chex instead of Harmony/WolfenDoom/STRAIN, the scaling section still
+    claiming rebuilds raise internal resolution, the installer's menu and
+    warning still describing buffer size as sharpness with a crash risk,
+    and the troubleshooting list numbering. Historical change-log entries
+    are left as written; they describe what was true at the time.
+
 ## Performance notes
 
 What the build does for speed, and what to expect on heavy maps:
@@ -937,9 +953,10 @@ legally own, or the freely distributable shareware `doom1.wad`.
     the engine version of this error anymore.
 
 12. A PWAD loads but replaced sprites or floor textures look unchanged.
-    Vanilla WAD loading limitation; see "Loading PWADs (mods)".
+    Plain `-file` loading cannot fold those in; tick "total conversion
+    (merge)" next to the PWAD picker and start again.
 
-15. Crashes that the limit removal fixed, for reference when testing. If a
+13. Crashes that the limit removal fixed, for reference when testing. If a
     build BEFORE the limit patch died on a big map, the red error box or
     console showed one of these: "R_FindPlane: no more visplanes" (the
     classic one), "P_AddActivePlat: no more plats!", "P_StartButton: no
@@ -949,12 +966,12 @@ legally own, or the freely distributable shareware `doom1.wad`.
     these on a current build, rebuild and check the build stamp date; if it
     persists on a fresh build, open an issue with the map name.
 
-16. A big map dies with "P_PlayerInSpecialSector: unknown special" or its
+14. A big map dies with "P_PlayerInSpecialSector: unknown special" or its
     switches and doors simply do nothing. That is a Boom-format map, which
     this vanilla engine does not support; no limit setting fixes that. See
     the format caveat under "Loading PWADs (mods)".
 
-17. `RuntimeError: function signature mismatch` in an older build whenever
+15. `RuntimeError: function signature mismatch` in an older build whenever
     the engine hit any error. Fixed by an engine patch: vanilla registered
     a boolean-returning function as an exit handler through a cast, which
     x86 tolerates but WebAssembly traps on, so every engine error crashed
@@ -963,12 +980,12 @@ legally own, or the freely distributable shareware `doom1.wad`.
     box (plus a watchdog catches the case where the engine stops before
     rendering its first frame).
 
-18. A warning about `emscripten_set_main_loop_timing` and "a main loop does
+16. A warning about `emscripten_set_main_loop_timing` and "a main loop does
     not exist" appears in the console at boot. Harmless: SDL tries to set
     its frame timing before the engine's main loop is registered a moment
     later. It has always been there and affects nothing.
 
-19. "You cannot -file with the shareware version" even though the main WAD
+17. "You cannot -file with the shareware version" even though the main WAD
     is a full doom.wad or doom2.wad. Old builds of this page presented
     every chosen WAD to the engine under the name doom1.wad, and the
     engine identifies WADs by filename, so everything ran as shareware
@@ -977,7 +994,7 @@ legally own, or the freely distributable shareware `doom1.wad`.
     If you still see this on a current build, your WAD really is the
     shareware one; the setup screen warning will say so.
 
-20. The game froze the whole tab on a heavy map (huge monster counts).
+18. The game froze the whole tab on a heavy map (huge monster counts).
     Old builds compiled without optimization AND let the engine try to
     catch up on missed game tics without limit, so an overloaded frame
     grew more overloaded forever. Fixed twice over: builds now use -O2,
@@ -986,7 +1003,7 @@ legally own, or the freely distributable shareware `doom1.wad`.
     stays responsive). If the readout sits at 35/35 and it still feels
     wrong, that is something else; open an issue with the map name.
 
-21. The build fails compiling `deh_io.c` with "member reference type
+19. The build fails compiling `deh_io.c` with "member reference type
     'lumpinfo_t' ... is not a pointer". A cached Chocolate Doom clone from
     an older build is the wrong release. Pull the latest version of this
     repo and re-run `./install.sh`: the cache now checks its own release
@@ -994,7 +1011,7 @@ legally own, or the freely distributable shareware `doom1.wad`.
     `chocolate-deh-src` folder inside your doomgeneric checkout and
     re-run.)
 
-13. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
+20. `TypeError: Failed to execute 'decode' on 'TextDecoder': The provided
     ArrayBuffer value must not be resizable` in the console, and the game
     never starts. The build was made with a too-new Emscripten toolchain
     whose runtime some browsers reject. Pull the latest version of this repo,
@@ -1014,7 +1031,7 @@ legally own, or the freely distributable shareware `doom1.wad`.
     - Close the game's browser tab completely and open `index.html` again. A
       plain reload can serve a cached copy on `file://` pages.
 
-14. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as
+21. `Unsafe attempt to load URL file:///... 'file:' URLs are treated as
     unique security origins` in the console. Same cause and same fix as the
     previous entry: a too-new runtime attempted a network style load, which
     browsers do not allow on `file://` pages. The pinned toolchain embeds

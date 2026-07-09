@@ -64,22 +64,14 @@ WASM_BUILDER_EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
 # same result. Override by exporting EMSDK_VERSION if you want to experiment.
 EMSDK_VERSION="${EMSDK_VERSION:-3.1.64}"
 
-# ---- Optional internal render resolution -----------------------------------
-# doomgeneric renders the game into a fixed-size pixel buffer that is baked in
-# at COMPILE time (it cannot change while the game is running). The default is
-# 640x400, which is the classic doomgeneric resolution.
-#
-# You can raise it here to render the game world at a higher internal
-# resolution (crisper geometry, thinner "stair-stepping" on edges). This is
-# the closest thing to "higher internal resolution" that the vanilla Doom
-# renderer supports. The on-screen size is handled separately by the page,
-# which scales this buffer to fit your browser window.
-#
-# WARNING: the original Doom software renderer has hard internal limits
-# (visplanes, drawsegs, openings). Very high resolutions can overflow those
-# on detailed maps and crash the game. Modest bumps (e.g. 960x600, 1280x800)
-# are usually safe; go higher at your own risk. Keep the ratio close to 8:5
-# (the same shape as 640x400) for the least surprises.
+# ---- Optional frame buffer size ---------------------------------------------
+# The vanilla engine always renders the game at the original 320x200 and
+# enlarges it by a whole-number factor into a frame buffer whose size is
+# baked in at COMPILE time. This setting chooses that buffer size; it does
+# NOT make the world sharper. Larger buffers mainly cost a little memory
+# and copying time. The classic 640x400 default is fine for almost anyone.
+# On-screen size is handled separately by the page, and the GPU filters
+# work from the true 320x200 image regardless of this setting.
 #
 # If neither variable is set, the script shows a small menu (see below). Set
 # both to skip the menu, e.g.:  DOOM_RESX=960 DOOM_RESY=600 ./install.sh
@@ -122,13 +114,13 @@ fi
 if [ -z "$DOOM_RESX" ] || [ -z "$DOOM_RESY" ]; then
   if [ -t 0 ]; then
     echo ""
-    echo "Choose the internal render resolution (how sharply the 3D world is"
-    echo "drawn). The page scales it to fill your browser window either way;"
-    echo "this only sets how much detail there is to scale."
+    echo "Choose the frame buffer size. The engine always renders the game"
+    echo "at the original 320x200 and enlarges it into this buffer, so bigger"
+    echo "is NOT sharper; it mainly costs memory. The default is fine."
     echo ""
-    echo "  1) 640 x 400    classic doomgeneric look (default)"
-    echo "  2) 960 x 600    sharper, still safe"
-    echo "  3) 1280 x 800   much sharper, small crash risk on very complex maps"
+    echo "  1) 640 x 400    classic default"
+    echo "  2) 960 x 600"
+    echo "  3) 1280 x 800"
     echo "  4) custom"
     echo ""
     read -r -p "Selection [1-4, Enter for 1]: " RES_CHOICE
@@ -155,11 +147,11 @@ if ! [[ "$DOOM_RESX" =~ ^[0-9]+$ ]] || ! [[ "$DOOM_RESY" =~ ^[0-9]+$ ]]; then
   die "DOOM_RESX and DOOM_RESY must be positive whole numbers (got '$DOOM_RESX' x '$DOOM_RESY')."
 fi
 
-# Friendly heads-up if the chosen resolution is large enough to risk crashes.
-if [ "$DOOM_RESX" -gt 960 ] || [ "$DOOM_RESY" -gt 600 ]; then
-  warn "Internal resolution ${DOOM_RESX}x${DOOM_RESY} is quite high."
-  warn "The vanilla Doom renderer can overflow on complex maps at high resolutions and crash."
-  warn "If you hit crashes, rebuild with a smaller DOOM_RESX/DOOM_RESY (default is 640x400)."
+# Friendly heads-up for very large buffers: no crash risk (the render is
+# always 320x200), just wasted memory and copy time.
+if [ "$DOOM_RESX" -gt 1920 ] || [ "$DOOM_RESY" -gt 1200 ]; then
+  warn "Frame buffer ${DOOM_RESX}x${DOOM_RESY} is very large. The game is still"
+  warn "rendered at 320x200 and enlarged, so this only costs memory and copy time."
 fi
 
 log "Internal render resolution: ${DOOM_RESX}x${DOOM_RESY} (window scaling is handled in the browser)."
@@ -1022,7 +1014,7 @@ CC=emcc
 #   -DFEATURE_SOUND        : compile in doomgeneric's sound/music support.
 #   $(SDL_FLAGS)           : SDL2 headers.
 #   $(EXTRA_CFLAGS)        : injected by install.sh at build time (the
-#                            internal-resolution override lands here).
+#                            frame-buffer size lands here).
 CFLAGS += -O2 -fno-strict-aliasing -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
 
 # ---- Link-time flags ----------------------------------------------------
@@ -3042,7 +3034,7 @@ fi
 # 6. Build
 # ---------------------------------------------------------------------------
 # We pass EXTRA_CFLAGS on the make command line so the Makefile can bake the
-# chosen internal resolution into every compiled file. Passing it as a make
+# chosen frame buffer size into every compiled file. Passing it as a make
 # variable (rather than editing the Makefile) keeps the Makefile generic and
 # avoids any quoting surprises.
 log "Building (emmake make -f Makefile.emscripten) at ${DOOM_RESX}x${DOOM_RESY}..."
