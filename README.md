@@ -813,6 +813,18 @@ the crash and the game now runs.
     ARE the three games: Episode 1 is Chex Quest, Episode 2 is Chex Quest
     2, Episode 3 is Chex Quest 3.
 
+### GPU filter performance pass (round eighteen)
+
+59. Fixed the GPU filters dragging performance down at large frame buffer
+    sizes. The cost was never the shaders: every display refresh uploaded
+    the entire frame buffer (multiple megabytes, scaling with buffer size)
+    through a slow copy path. The pipeline now stages the true 320x200
+    image on a small canvas first (a fixed quarter-megabyte upload no
+    matter the buffer size), refreshes the texture in place instead of
+    reallocating, and throttles filtering to about 41 updates a second,
+    just above the 35 Hz at which Doom's picture can actually change.
+    Filter cost is now independent of the frame buffer setting.
+
 ## Performance notes
 
 What the build does for speed, and what to expect on heavy maps:

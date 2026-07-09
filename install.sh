@@ -2567,7 +2567,18 @@ function gpuFilterReady() {
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    // The source texture, refreshed from the game canvas every frame.
+    // Small staging canvas: the game image is drawn into this at its TRUE
+    // logical size (320x200) before upload. This is the heart of the
+    // filter's performance: uploading the full frame buffer cost multiple
+    // megabytes per display refresh and scaled with the buffer size, while
+    // this stays a fixed quarter-megabyte no matter how big the buffer is.
+    glFilter.stage = document.createElement('canvas');
+    glFilter.stageCtx = glFilter.stage.getContext('2d');
+    glFilter.srcW = 0;
+    glFilter.srcH = 0;
+    glFilter.lastTime = 0;
+
+    // The source texture, refreshed from the staging canvas.
     glFilter.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -2630,6 +2641,14 @@ function gpuFilterFrame() {
   const bw = canvas.width, bh = canvas.height;
   if (!bw || !bh) return;
 
+  // Throttle to about 41 updates a second. Doom's game logic runs at a
+  // fixed 35 Hz, so the picture cannot change more often than that;
+  // filtering faster (for example at a 144 Hz display's full rate) is
+  // pure waste.
+  const now = performance.now();
+  if (now - glFilter.lastTime < 24) return;
+  glFilter.lastTime = now;
+
   const logical = logicalSourceSize(bw, bh);
   const scale = activeGpuFilter.passes === 2 ? 4 : 2;
   const ow = logical.w * scale, oh = logical.h * scale;
@@ -2638,9 +2657,27 @@ function gpuFilterFrame() {
     filtercanvas.height = oh;
   }
 
-  // Upload this frame's game image.
+  // Recover the true 320x200 image on the staging canvas: an integer
+  // nearest-neighbour downscale of a nearest-neighbour enlargement is
+  // exact. Resizing a canvas resets its context state, so smoothing is
+  // re-disabled whenever the size changes.
+  if (glFilter.stage.width !== logical.w || glFilter.stage.height !== logical.h) {
+    glFilter.stage.width = logical.w;
+    glFilter.stage.height = logical.h;
+    glFilter.stageCtx.imageSmoothingEnabled = false;
+  }
+  glFilter.stageCtx.drawImage(canvas, 0, 0, logical.w, logical.h);
+
+  // Upload the small staged image. Storage is allocated once per size and
+  // refreshed in place, which keeps the driver on its fast path.
   gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+  if (glFilter.srcW !== logical.w || glFilter.srcH !== logical.h) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, logical.w, logical.h, 0,
+                  gl.RGBA, gl.UNSIGNED_BYTE, null);
+    glFilter.srcW = logical.w;
+    glFilter.srcH = logical.h;
+  }
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, glFilter.stage);
 
   if (activeGpuFilter.passes === 1) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
