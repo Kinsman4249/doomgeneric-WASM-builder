@@ -34,7 +34,7 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # Configuration (override any of these by exporting the variable before
-# running the script, e.g.  DOOM_RESX=960 DOOM_RESY=600 ./install.sh )
+# running the script, e.g.  EMSDK_VERSION=3.1.64 ./install.sh )
 # ---------------------------------------------------------------------------
 
 # Where the doomgeneric source code will be cloned to.
@@ -64,20 +64,6 @@ WASM_BUILDER_EMSDK_DIR="${EMSDK_DIR:-$HOME/emsdk}"
 # same result. Override by exporting EMSDK_VERSION if you want to experiment.
 EMSDK_VERSION="${EMSDK_VERSION:-3.1.64}"
 
-# ---- Optional frame buffer size ---------------------------------------------
-# The vanilla engine always renders the game at the original 320x200 and
-# enlarges it by a whole-number factor into a frame buffer whose size is
-# baked in at COMPILE time. This setting chooses that buffer size; it does
-# NOT make the world sharper. Larger buffers mainly cost a little memory
-# and copying time. The classic 640x400 default is fine for almost anyone.
-# On-screen size is handled separately by the page, and the GPU filters
-# work from the true 320x200 image regardless of this setting.
-#
-# If neither variable is set, the script shows a small menu (see below). Set
-# both to skip the menu, e.g.:  DOOM_RESX=960 DOOM_RESY=600 ./install.sh
-DOOM_RESX="${DOOM_RESX:-}"
-DOOM_RESY="${DOOM_RESY:-}"
-
 # ---------------------------------------------------------------------------
 # Small helper functions for nicely coloured log output.
 #   log()  = green  "==>" progress messages
@@ -103,58 +89,6 @@ fi
 if ! command -v dnf >/dev/null 2>&1; then
   die "dnf not found. This script targets a Fedora-based distrobox container. See README.md."
 fi
-
-# ---------------------------------------------------------------------------
-# 0.5 Internal render resolution choice
-# ---------------------------------------------------------------------------
-# Ask interactively unless (a) both env vars are already set, or (b) there is
-# no terminal to ask on (e.g. the script is being run by another program), in
-# which case the classic default is used. '[ -t 0 ]' is bash for "is standard
-# input a real terminal?".
-if [ -z "$DOOM_RESX" ] || [ -z "$DOOM_RESY" ]; then
-  if [ -t 0 ]; then
-    echo ""
-    echo "Choose the frame buffer size. The engine always renders the game"
-    echo "at the original 320x200 and enlarges it into this buffer, so bigger"
-    echo "is NOT sharper; it mainly costs memory. The default is fine."
-    echo ""
-    echo "  1) 640 x 400    classic default"
-    echo "  2) 960 x 600"
-    echo "  3) 1280 x 800"
-    echo "  4) custom"
-    echo ""
-    read -r -p "Selection [1-4, Enter for 1]: " RES_CHOICE
-    case "${RES_CHOICE:-1}" in
-      1) DOOM_RESX=640;  DOOM_RESY=400 ;;
-      2) DOOM_RESX=960;  DOOM_RESY=600 ;;
-      3) DOOM_RESX=1280; DOOM_RESY=800 ;;
-      4)
-        read -r -p "Width in pixels: "  DOOM_RESX
-        read -r -p "Height in pixels: " DOOM_RESY
-        ;;
-      *) die "Unrecognized selection '$RES_CHOICE'. Run the script again and pick 1-4." ;;
-    esac
-  else
-    # Not interactive: fall back to the classic default quietly.
-    DOOM_RESX=640
-    DOOM_RESY=400
-  fi
-fi
-
-# Validate the resolution: both values must be whole numbers.
-# The regex ^[0-9]+$ means "one or more digits, start to finish".
-if ! [[ "$DOOM_RESX" =~ ^[0-9]+$ ]] || ! [[ "$DOOM_RESY" =~ ^[0-9]+$ ]]; then
-  die "DOOM_RESX and DOOM_RESY must be positive whole numbers (got '$DOOM_RESX' x '$DOOM_RESY')."
-fi
-
-# Friendly heads-up for very large buffers: no crash risk (the render is
-# always 320x200), just wasted memory and copy time.
-if [ "$DOOM_RESX" -gt 1920 ] || [ "$DOOM_RESY" -gt 1200 ]; then
-  warn "Frame buffer ${DOOM_RESX}x${DOOM_RESY} is very large. The game is still"
-  warn "rendered at 320x200 and enlarged, so this only costs memory and copy time."
-fi
-
-log "Internal render resolution: ${DOOM_RESX}x${DOOM_RESY} (window scaling is handled in the browser)."
 
 # ---------------------------------------------------------------------------
 # 1. System packages
@@ -1013,9 +947,14 @@ CC=emcc
 #                            otherwise. Standard practice for Doom ports.
 #   -DFEATURE_SOUND        : compile in doomgeneric's sound/music support.
 #   $(SDL_FLAGS)           : SDL2 headers.
-#   $(EXTRA_CFLAGS)        : injected by install.sh at build time (the
-#                            frame-buffer size lands here).
-CFLAGS += -O2 -fno-strict-aliasing -DFEATURE_SOUND $(SDL_FLAGS) $(EXTRA_CFLAGS)
+#   RESX/RESY 320x200      : the frame buffer matches what the vanilla
+#                            renderer actually draws. Bigger buffers were
+#                            only an enlarged copy of the same image, so
+#                            the option was removed; the page (and the GPU
+#                            filters) do all upscaling from the true
+#                            picture, and the engine skips a multi-MB
+#                            enlargement copy every frame.
+CFLAGS += -O2 -fno-strict-aliasing -DFEATURE_SOUND -DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 $(SDL_FLAGS)
 
 # ---- Link-time flags ----------------------------------------------------
 # These "-s NAME=VALUE" options are LINKER settings. They must live in LDFLAGS
@@ -2280,8 +2219,8 @@ function setFilter(mode) {
 // the engine changes the backing buffer size.
 function applyScaling() {
   // The engine's render buffer size. Fall back to 640x400 if not set yet.
-  const bufW = canvas.width  || 640;
-  const bufH = canvas.height || 400;
+  const bufW = canvas.width  || 320;
+  const bufH = canvas.height || 200;
   if (!bufW || !bufH) return;
 
   // How much room we have to draw into.
@@ -2890,7 +2829,7 @@ HTML_EOF
 # variables are NOT expanded inside it; we substitute the placeholder here
 # instead. The stamp shows on the setup screen and in the browser console,
 # which makes stale-cache and forgot-to-rebuild problems obvious at a glance.
-BUILD_STAMP="emsdk ${EMSDK_VERSION}, doomgeneric ${DOOMGENERIC_COMMIT:0:7} patched, ${DOOM_RESX}x${DOOM_RESY}, built $(date -u '+%Y-%m-%d %H:%M UTC')"
+BUILD_STAMP="emsdk ${EMSDK_VERSION}, doomgeneric ${DOOMGENERIC_COMMIT:0:7} patched, built $(date -u '+%Y-%m-%d %H:%M UTC')"
 sed -i "s|__BUILD_INFO__|${BUILD_STAMP}|" index.html
 log "Stamped index.html: ${BUILD_STAMP}"
 
@@ -3033,14 +2972,9 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Build
 # ---------------------------------------------------------------------------
-# We pass EXTRA_CFLAGS on the make command line so the Makefile can bake the
-# chosen frame buffer size into every compiled file. Passing it as a make
-# variable (rather than editing the Makefile) keeps the Makefile generic and
-# avoids any quoting surprises.
-log "Building (emmake make -f Makefile.emscripten) at ${DOOM_RESX}x${DOOM_RESY}..."
+log "Building (emmake make -f Makefile.emscripten)..."
 emmake make -f Makefile.emscripten clean
-emmake make -f Makefile.emscripten \
-  EXTRA_CFLAGS="-DDOOMGENERIC_RESX=${DOOM_RESX} -DDOOMGENERIC_RESY=${DOOM_RESY}"
+emmake make -f Makefile.emscripten
 
 # Sanity check: the linker should have produced doomgeneric.js.
 if [ ! -f "$BUILD_DIR/doomgeneric.js" ]; then

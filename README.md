@@ -74,24 +74,22 @@ chmod +x install.sh
 The script is idempotent, which means it is safe to re-run. Each step checks
 whether its work is already done before doing it again. In order, it will:
 
-1. Ask which frame buffer size to build (see "Choosing the frame buffer
-   size" below). Setting `DOOM_RESX` and `DOOM_RESY` skips the question.
-2. Install required packages (`git make cmake python3 gcc gcc-c++ patch`) if
+1. Install required packages (`git make cmake python3 gcc gcc-c++ patch`) if
    any are missing.
-3. Clone the Emscripten SDK into `~/emsdk` if not already present, then
+2. Clone the Emscripten SDK into `~/emsdk` if not already present, then
    install and activate a pinned, known-good release of it (see "Why the
    toolchain is pinned" below).
-4. Add the emsdk environment to `~/.bashrc` and `~/.bash_profile` so that
+3. Add the emsdk environment to `~/.bashrc` and `~/.bash_profile` so that
    `emcc` is available in future shells without any manual step.
-5. Clone `doomgeneric` into `~/doomgeneric` if not already present, reset it
+4. Clone `doomgeneric` into `~/doomgeneric` if not already present, reset it
    to a pinned commit, and apply the mouse-look engine patches (see "What is
    patched in the engine source" below).
-6. Write a patched `Makefile.emscripten` (see "What is patched" below).
-7. Write `index.html` (the WAD picker, controls UI, and display controls).
-8. Build and verify. The output is `~/doomgeneric/doomgeneric/doomgeneric.js`
+5. Write a patched `Makefile.emscripten` (see "What is patched" below).
+6. Write `index.html` (the WAD picker, controls UI, and display controls).
+7. Build and verify. The output is `~/doomgeneric/doomgeneric/doomgeneric.js`
    and `index.html`. The paths to everything, including the downloaded
    freeware games, are printed at the end.
-9. Optionally package everything (page, engine, freeware pack) into a
+8. Optionally package everything (page, engine, freeware pack) into a
    ready-to-upload `site/` folder plus a `doom-site.tar.gz`. All paths in
    the page are relative, so the folder works on any domain, any
    subdirectory, any static host, with zero configuration. Control with
@@ -102,20 +100,15 @@ browser. If the container shares your home directory with the host (the
 Distrobox default), that same path exists on your host too, so you can open it
 from your host file manager or browser.
 
-### Choosing the frame buffer size
+### About resolution
 
-When you run the script in a terminal it shows a small menu of frame buffer
-sizes (640x400 default, 960x600, 1280x800, or custom). Setting `DOOM_RESX`
-and `DOOM_RESY` skips the menu.
-
-An honest note about what this DOES and does not do: this engine always
-renders the game at the original 320x200 (that is the vanilla renderer,
-faithfully), and then enlarges it into the frame buffer by a whole-number
-factor. So the buffer size does not make the world sharper; larger buffers
-mainly cost a little more memory and copying time. The classic default is
-fine for almost everyone. On-screen size is handled separately by the page
-(see "Display" below), and the GPU filters work from the true 320x200
-picture regardless of this setting.
+There is nothing to configure. The vanilla renderer always draws the game
+at the original 320x200, and the build runs the engine at exactly that
+size: earlier versions offered a bigger frame buffer option, but it only
+produced an enlarged copy of the same image while costing memory and a
+multi-megabyte copy every frame, so it was removed. All upscaling happens
+in the page: the display scaling fills your window (see "Display" below)
+and the GPU filters work from the true 320x200 picture.
 
 ## Playing
 
@@ -350,13 +343,10 @@ out of scope for this engine.
 
 ### Why the on-screen size scales at runtime but the rendering does not
 
-The vanilla renderer always draws the game at 320x200; the engine enlarges
-that by a whole-number factor into a frame buffer whose size is fixed at
-compile time (see "Choosing the frame buffer size" above). Neither can
-change while the game runs, so the page scales the finished buffer to fill
+The vanilla renderer always draws the game at 320x200, and that cannot
+change while the game runs, so the page scales the finished frame to fill
 the window using CSS, and the pixel filters decide how that scaling looks.
-The GPU filters recover the true 320x200 image first, so they are
-unaffected by any of this.
+The GPU filters work from the same true 320x200 image.
 
 ## What is patched in `Makefile.emscripten`
 
@@ -853,6 +843,16 @@ the crash and the game now runs.
     warning still describing buffer size as sharpness with a crash risk,
     and the troubleshooting list numbering. Historical change-log entries
     are left as written; they describe what was true at the time.
+
+### Native 320x200 (round twenty-one, v2.1)
+
+63. Removed the frame buffer size option entirely. Since the vanilla
+    renderer always draws 320x200, bigger buffers were only an enlarged
+    copy of the same image; the engine now runs at exactly 320x200, which
+    also deletes a multi-megabyte enlargement copy from every frame. All
+    upscaling (display scaling, Smooth, the GPU filters) happens in the
+    page from the true picture, and Smooth finally looks properly smooth
+    because it blends real pixels instead of pre-fattened ones.
 
 ## Performance notes
 
