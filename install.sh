@@ -84,25 +84,48 @@ if [ "$(id -u)" -eq 0 ]; then
   die "Do not run this as root. Run it as your normal user inside the distrobox container."
 fi
 
-# This script installs packages with dnf (Fedora's package manager). If dnf is
-# missing, you are almost certainly not in the intended Fedora container.
-if ! command -v dnf >/dev/null 2>&1; then
-  die "dnf not found. This script targets a Fedora-based distrobox container. See README.md."
+# Detect the distro family so the package steps (and, later, the web server
+# ownership rules) can branch correctly. Reads /etc/os-release, the standard
+# place every modern distro describes itself. The file path can be overridden
+# with OS_RELEASE_FILE, which exists purely so the detection is testable.
+OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
+DISTRO_FAMILY=""
+if [ -r "$OS_RELEASE_FILE" ]; then
+  # Pull ID and ID_LIKE (e.g. ID=ubuntu, ID_LIKE="debian") in a subshell so
+  # sourcing the file cannot leak variables into this script.
+  DISTRO_IDS="$( . "$OS_RELEASE_FILE" 2>/dev/null; echo "${ID:-} ${ID_LIKE:-}" )"
+else
+  DISTRO_IDS=""
 fi
+
+case " $DISTRO_IDS " in
+  *debian*|*ubuntu*) DISTRO_FAMILY="debian" ;;
+  *fedora*|*rhel*)   DISTRO_FAMILY="fedora" ;;
+  *)
+    die "Unsupported distro (os-release says: '${DISTRO_IDS:-unreadable}'). This script supports Fedora/RHEL-family and Debian/Ubuntu-family systems. See README.md."
+    ;;
+esac
+log "Detected distro family: $DISTRO_FAMILY"
 
 # ---------------------------------------------------------------------------
 # 1. System packages
 # ---------------------------------------------------------------------------
-log "Checking required packages (git, make, cmake, python3, gcc, gcc-c++, patch)..."
+# The tools the build needs. On Fedora, gcc and gcc-c++ are separate
+# packages; on Debian, build-essential supplies both compilers.
+if [ "$DISTRO_FAMILY" = "debian" ]; then
+  REQUIRED_PKGS=(git make cmake python3 build-essential patch)
+  PKG_CHECK() { dpkg -s "$1" >/dev/null 2>&1; }
+  PKG_INSTALL_HINT="apt-get install -y"
+else
+  REQUIRED_PKGS=(git make cmake python3 gcc gcc-c++ patch)
+  PKG_CHECK() { rpm -q "$1" >/dev/null 2>&1; }
+  PKG_INSTALL_HINT="dnf install -y"
+fi
 
-# The tools the build needs. gcc/gcc-c++ are needed because emsdk compiles a
-# few native helper tools while bootstrapping.
-REQUIRED_PKGS=(git make cmake python3 gcc gcc-c++ patch)
+log "Checking required packages (${REQUIRED_PKGS[*]})..."
 MISSING_PKGS=()
-
-# Build a list of packages that are NOT already installed (rpm -q checks that).
 for pkg in "${REQUIRED_PKGS[@]}"; do
-  rpm -q "$pkg" >/dev/null 2>&1 || MISSING_PKGS+=("$pkg")
+  PKG_CHECK "$pkg" || MISSING_PKGS+=("$pkg")
 done
 
 # Only call the package manager if something is actually missing.
@@ -114,9 +137,14 @@ if [ "${#MISSING_PKGS[@]}" -gt 0 ]; then
     warn "sudo may prompt for a password. If it fails outright, run this instead in another"
     warn "terminal, then re-run this script:"
     warn "  distrobox enter <your-container-name> --root"
-    warn "  dnf install -y ${MISSING_PKGS[*]}"
+    warn "  $PKG_INSTALL_HINT ${MISSING_PKGS[*]}"
   fi
-  sudo dnf install -y "${MISSING_PKGS[@]}"
+  if [ "$DISTRO_FAMILY" = "debian" ]; then
+    sudo apt-get update
+    sudo apt-get install -y "${MISSING_PKGS[@]}"
+  else
+    sudo dnf install -y "${MISSING_PKGS[@]}"
+  fi
 else
   log "All required packages already present."
 fi
@@ -3040,6 +3068,194 @@ echo "Open index.html directly in a browser (double-click it, or drag it into a"
 echo "tab). No web server required."
 
 # ---------------------------------------------------------------------------
+# 6.5 Optional: deploy into an existing Apache or Nginx site
+# ---------------------------------------------------------------------------
+# Looks for web servers already configured on THIS machine, lists their
+# sites' document roots, and copies the build into a doomgeneric-WASM/
+# subfolder of the one you pick. It never touches the web server's own
+# configuration and never reloads anything: whatever domain or vhost
+# already points at that site root simply gains a /doomgeneric-WASM/ path.
+# Control with WEBEXPORT=1 / WEBEXPORT=0; unset asks when a terminal is
+# available. Skipped silently when declined or when no server is found.
+
+WEBEXPORT_DONE=0
+WEBEXPORT_DIR=""
+
+if [ -z "${WEBEXPORT:-}" ]; then
+  if [ -t 0 ]; then
+    read -r -p "Check this system for existing Apache or Nginx sites to deploy the Doom build into? [y/N]: " WE_ANS
+    case "${WE_ANS:-N}" in
+      [Yy]*) WEBEXPORT=1 ;;
+      *)     WEBEXPORT=0 ;;
+    esac
+  else
+    WEBEXPORT=0
+  fi
+fi
+
+# Pull ServerName/DocumentRoot pairs out of an Apache config file.
+# Prints "name<TAB>root" (name may be empty).
+parse_apache_conf() {
+  awk '
+    /^[[:space:]]*ServerName[[:space:]]/   { name=$2 }
+    /^[[:space:]]*DocumentRoot[[:space:]]/ {
+      root=$2; gsub(/"/, "", root);
+      print name "\t" root; name=""
+    }
+  ' "$1" 2>/dev/null
+}
+
+# Pull server_name/root pairs out of an nginx config file.
+parse_nginx_conf() {
+  awk '
+    /^[[:space:]]*server_name[[:space:]]/ { name=$2; gsub(/;/, "", name) }
+    /^[[:space:]]*root[[:space:]]/ {
+      root=$2; gsub(/[";]/, "", root);
+      print name "\t" root; name=""
+    }
+  ' "$1" 2>/dev/null
+}
+
+if [ "$WEBEXPORT" = "1" ]; then
+  log "Looking for installed web servers..."
+
+  HAVE_APACHE=0
+  HAVE_NGINX=0
+  if [ "$DISTRO_FAMILY" = "debian" ]; then
+    command -v apache2 >/dev/null 2>&1 && [ -d /etc/apache2 ] && HAVE_APACHE=1
+  else
+    command -v httpd >/dev/null 2>&1 && [ -d /etc/httpd ] && HAVE_APACHE=1
+  fi
+  command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx ] && HAVE_NGINX=1
+
+  if [ "$HAVE_APACHE" = "0" ] && [ "$HAVE_NGINX" = "0" ]; then
+    log "No Apache or Nginx installation found; skipping web deploy."
+  else
+    # Enumerate sites: three parallel arrays (server kind, display name,
+    # document root), deduplicated on the root path.
+    SITE_KINDS=()
+    SITE_NAMES=()
+    SITE_ROOTS=()
+
+    add_site() {   # kind, name, root
+      local k="$1" n="$2" r="$3" existing
+      [ -n "$r" ] || return 0
+      for existing in ${SITE_ROOTS[@]+"${SITE_ROOTS[@]}"}; do
+        [ "$existing" = "$r" ] && return 0
+      done
+      SITE_KINDS+=("$k")
+      SITE_NAMES+=("${n:-(no server name)}")
+      SITE_ROOTS+=("$r")
+    }
+
+    collect_from() {   # kind, parser, glob...
+      local kind="$1" parser="$2" f parsed name root
+      shift 2
+      for f in "$@"; do
+        [ -f "$f" ] || continue
+        # A here-string instead of process substitution: it behaves the
+        # same but does not depend on /dev/fd existing.
+        parsed="$("$parser" "$f")" || parsed=""
+        while IFS=$'\t' read -r name root; do
+          add_site "$kind" "$name" "$root"
+        done <<< "$parsed"
+      done
+    }
+
+    if [ "$HAVE_APACHE" = "1" ]; then
+      if [ "$DISTRO_FAMILY" = "debian" ]; then
+        collect_from apache parse_apache_conf /etc/apache2/sites-enabled/*.conf /etc/apache2/sites-enabled/*
+      else
+        collect_from apache parse_apache_conf /etc/httpd/conf.d/*.conf
+      fi
+    fi
+    if [ "$HAVE_NGINX" = "1" ]; then
+      if [ "$DISTRO_FAMILY" = "debian" ]; then
+        collect_from nginx parse_nginx_conf /etc/nginx/sites-enabled/*
+      else
+        collect_from nginx parse_nginx_conf /etc/nginx/conf.d/*.conf
+      fi
+    fi
+
+    echo ""
+    echo "Discovered sites:"
+    i=1
+    for idx in ${SITE_ROOTS[@]+"${!SITE_ROOTS[@]}"}; do
+      printf '  %d) [%s] %s  ->  %s\n' "$i" "${SITE_KINDS[$idx]}" "${SITE_NAMES[$idx]}" "${SITE_ROOTS[$idx]}"
+      i=$((i + 1))
+    done
+    MANUAL_OPT=$i
+    SKIP_OPT=$((i + 1))
+    echo "  ${MANUAL_OPT}) Enter a path manually"
+    echo "  ${SKIP_OPT}) Skip, do not deploy to a web server"
+    echo ""
+    read -r -p "Selection [1-${SKIP_OPT}]: " WE_CHOICE
+
+    TARGET_ROOT=""
+    TARGET_KIND=""
+    if ! [[ "${WE_CHOICE:-}" =~ ^[0-9]+$ ]] || [ "$WE_CHOICE" -lt 1 ] || [ "$WE_CHOICE" -gt "$SKIP_OPT" ]; then
+      warn "Selection '$WE_CHOICE' is not in range; skipping web deploy."
+    elif [ "$WE_CHOICE" = "$SKIP_OPT" ]; then
+      log "Web deploy skipped."
+    elif [ "$WE_CHOICE" = "$MANUAL_OPT" ]; then
+      read -r -p "Site root path: " TARGET_ROOT
+      # A manual path has no config file to name the server; assume the one
+      # that is installed (Apache first when both are).
+      if [ "$HAVE_APACHE" = "1" ]; then TARGET_KIND="apache"; else TARGET_KIND="nginx"; fi
+    else
+      TARGET_ROOT="${SITE_ROOTS[$((WE_CHOICE - 1))]}"
+      TARGET_KIND="${SITE_KINDS[$((WE_CHOICE - 1))]}"
+    fi
+
+    if [ -n "$TARGET_ROOT" ]; then
+      if [ ! -d "$TARGET_ROOT" ]; then
+        warn "'$TARGET_ROOT' is not a directory; skipping web deploy."
+      else
+        WEBEXPORT_DIR="$TARGET_ROOT/doomgeneric-WASM"
+        log "Deploying into $WEBEXPORT_DIR ..."
+
+        # Idempotent: clear and recreate ONLY our own subfolder. Nothing
+        # else in the site root is touched.
+        sudo rm -rf "$WEBEXPORT_DIR"
+        sudo mkdir -p "$WEBEXPORT_DIR"
+        sudo cp "$BUILD_DIR/index.html" "$BUILD_DIR/doomgeneric.js" "$WEBEXPORT_DIR/"
+        if [ -d "$BUILD_DIR/freeware" ]; then
+          sudo cp -r "$BUILD_DIR/freeware" "$WEBEXPORT_DIR/freeware"
+        fi
+
+        # Least-privilege static-site permissions, owned by the account the
+        # detected web server actually runs as on this distro family.
+        if [ "$DISTRO_FAMILY" = "debian" ]; then
+          WEB_USER="www-data"
+        elif [ "$TARGET_KIND" = "nginx" ]; then
+          WEB_USER="nginx"
+        else
+          WEB_USER="apache"
+        fi
+        sudo chown -R "$WEB_USER:$WEB_USER" "$WEBEXPORT_DIR"
+        sudo find "$WEBEXPORT_DIR" -type d -exec chmod 755 {} +
+        sudo find "$WEBEXPORT_DIR" -type f -exec chmod 644 {} +
+
+        # Fedora: give the files the right SELinux context so httpd/nginx
+        # may actually read them.
+        if [ "$DISTRO_FAMILY" = "fedora" ] && command -v getenforce >/dev/null 2>&1; then
+          SEMODE="$(getenforce 2>/dev/null || echo Disabled)"
+          if [ "$SEMODE" != "Disabled" ] && command -v restorecon >/dev/null 2>&1; then
+            sudo restorecon -R "$WEBEXPORT_DIR"
+          fi
+        fi
+
+        WEBEXPORT_DONE=1
+        echo ""
+        echo "  Deployed to:  $WEBEXPORT_DIR/"
+        echo "  Browse to:    <your site's address>/doomgeneric-WASM/"
+        echo ""
+      fi
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 7. Optional: package everything for a web server
 # ---------------------------------------------------------------------------
 # Collects the page, the engine, and the freeware pack (if present) into one
@@ -3060,7 +3276,9 @@ if [ -z "${SITE:-}" ]; then
   fi
 fi
 
+SITE_MADE=0
 if [ "$SITE" = "1" ]; then
+  SITE_MADE=1
   log "Packaging the website folder..."
   SITE_DIR="$BUILD_DIR/site"
   rm -rf "$SITE_DIR"
@@ -3080,4 +3298,91 @@ if [ "$SITE" = "1" ]; then
   echo ""
   echo "  cd \"$SITE_DIR\" && python3 -m http.server 8000"
   echo "  then open http://localhost:8000/"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. Optional cleanup after a web deploy
+# ---------------------------------------------------------------------------
+# Offered ONLY when the web deploy above actually completed. Verifies the
+# deployed copy is present and non-empty before deleting anything, deletes
+# only build artifacts (never the cloned source, unless separately
+# confirmed), and lists exactly what was removed.
+# Control with CLEANUP=1 / CLEANUP=0; unset asks when a terminal is
+# available.
+
+if [ "$WEBEXPORT_DONE" = "1" ]; then
+  if [ -z "${CLEANUP:-}" ]; then
+    if [ -t 0 ]; then
+      echo ""
+      echo "The build has been deployed to $WEBEXPORT_DIR/."
+      read -r -p "Remove the extra local copies now that the site copy exists? This deletes the build output and any downloaded freeware pack outside the web server directory. [y/N]: " CL_ANS
+      case "${CL_ANS:-N}" in
+        [Yy]*) CLEANUP=1 ;;
+        *)     CLEANUP=0 ;;
+      esac
+    else
+      CLEANUP=0
+    fi
+  fi
+
+  if [ "$CLEANUP" = "1" ]; then
+    # Never delete on trust: confirm the deployed copy is real first.
+    if [ ! -s "$WEBEXPORT_DIR/index.html" ] || [ ! -s "$WEBEXPORT_DIR/doomgeneric.js" ]; then
+      warn "Deployed copy at $WEBEXPORT_DIR is missing or empty; NOT deleting anything."
+    else
+      DELETED=()
+
+      # Build artifacts (the source tree stays; a re-run rebuilds these).
+      for item in "$BUILD_DIR/doomgeneric.js" "$BUILD_DIR/index.html"; do
+        if [ -f "$item" ]; then rm -f "$item"; DELETED+=("$item"); fi
+      done
+      if [ -d "$BUILD_DIR/build" ]; then
+        rm -rf "$BUILD_DIR/build"; DELETED+=("$BUILD_DIR/build/")
+      fi
+      if [ -d "$BUILD_DIR/freeware" ]; then
+        rm -rf "$BUILD_DIR/freeware"; DELETED+=("$BUILD_DIR/freeware/")
+      fi
+
+      # The site/ folder and tarball from the packaging step are only
+      # deleted with a specific confirmation, since the user asked for
+      # them separately in this same run.
+      if [ "$SITE_MADE" = "1" ] && { [ -d "$BUILD_DIR/site" ] || [ -f "$BUILD_DIR/doom-site.tar.gz" ]; }; then
+        SITE_CL="n"
+        if [ -t 0 ]; then
+          read -r -p "Also delete the packaged site folder and doom-site.tar.gz made earlier in this run? [y/N]: " SITE_CL
+        fi
+        case "${SITE_CL:-n}" in
+          [Yy]*)
+            [ -d "$BUILD_DIR/site" ] && rm -rf "$BUILD_DIR/site" && DELETED+=("$BUILD_DIR/site/")
+            [ -f "$BUILD_DIR/doom-site.tar.gz" ] && rm -f "$BUILD_DIR/doom-site.tar.gz" && DELETED+=("$BUILD_DIR/doom-site.tar.gz")
+            ;;
+          *) log "Keeping the packaged site folder and tarball." ;;
+        esac
+      fi
+
+      # Source removal is opt-in and separate: without the clone you cannot
+      # rebuild without re-cloning.
+      SRC_CL="n"
+      if [ -t 0 ]; then
+        read -r -p "ALSO delete the cloned source repo at $DOOMGENERIC_DIR (prevents rebuilding without re-cloning)? [y/N]: " SRC_CL
+      fi
+      case "${SRC_CL:-n}" in
+        [Yy]*)
+          rm -rf "$DOOMGENERIC_DIR"
+          DELETED+=("$DOOMGENERIC_DIR/")
+          ;;
+        *) log "Keeping the cloned source repo (re-run ./install.sh to rebuild any time)." ;;
+      esac
+
+      echo ""
+      echo "Deleted:"
+      for item in ${DELETED[@]+"${DELETED[@]}"}; do
+        echo "  $item"
+      done
+      echo ""
+      echo "Kept: $WEBEXPORT_DIR/ (the deployed site copy)"
+    fi
+  else
+    log "Cleanup declined; all local files left in place."
+  fi
 fi
