@@ -1,0 +1,1769 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DOOM</title>
+<style>
+  /*
+   * Styled after the Doom fan pages of 1997: black void, beveled gray
+   * chrome, Impact masthead, Times prose, Courier controls, flame rules,
+   * an LED hit counter. All pure CSS: id Software never released free
+   * fan-site art for classic Doom, so no copyrighted assets are shipped,
+   * and the page keeps working offline over file://.
+   */
+  html, body { margin: 0; height: 100%; }
+  body {
+    color: #b0b0b0;
+    font-family: "Times New Roman", Times, serif;
+    background: #050505;
+    background-image: repeating-linear-gradient(
+      45deg, #050505 0, #050505 6px, #0a0a0a 6px, #0a0a0a 12px);
+  }
+
+  /* -------- the fan-page panel -------- */
+  #setup {
+    max-width: 620px;
+    margin: 20px auto;
+    padding: 4px 14px 16px;
+    background: #000;
+    border: 4px ridge #707070;
+  }
+  .masthead { text-align: center; margin: 10px 0 2px; }
+  .masthead h1 {
+    margin: 0;
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 44px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #ff2a00;
+    text-shadow: 2px 2px 0 #5a0000, 4px 4px 0 #1a0000, 0 0 18px #ff450033;
+  }
+  .masthead h1 .thin {
+    font-family: "Times New Roman", serif;
+    font-style: italic;
+    font-size: 22px;
+    letter-spacing: 1px;
+    color: #c0c0c0;
+    text-transform: lowercase;
+    text-shadow: none;
+  }
+  .tagline {
+    margin: 2px 0 8px;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+  }
+  hr.flame {
+    border: 0;
+    height: 4px;
+    margin: 6px 0 2px;
+    background: linear-gradient(90deg, #1a0000, #ff4500, #ffcc00, #ff4500, #1a0000);
+  }
+
+  /* -------- beveled section boxes -------- */
+  .box {
+    border: 2px groove #6a6a6a;
+    background: #0a0a0a;
+    margin: 12px 0;
+    padding: 6px 10px 8px;
+  }
+  .boxtitle {
+    font-family: "Courier New", monospace;
+    font-weight: bold;
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: #ffcc00;
+    margin: 2px 0 6px;
+  }
+  .box p { margin: 6px 0; }
+  label { font-family: "Courier New", monospace; font-size: 13px; }
+
+  /* -------- retro widgets -------- */
+  input[type="file"], select, button {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #000;
+    background: #c0c0c0;
+    border: 2px outset #e8e8e8;
+  }
+  button { cursor: pointer; padding: 1px 10px; }
+  #setup select { width: auto; max-width: 240px; }
+  button:active { border-style: inset; }
+  input[type="text"], #keybinds input {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #9f9;
+    background: #101010;
+    border: 2px inset #555;
+    width: 110px;
+  }
+  a { color: #ffcc00; }
+  a:visited { color: #cc9900; }
+  a:hover { color: #ff4500; }
+
+  #keybinds {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 14px;
+  }
+  #keybinds label { display: block; margin: 2px 0; }
+
+  .hint { font-size: 11px; color: #7a7a7a; font-family: Verdana, Arial, sans-serif; }
+
+  #setupwarn {
+    display: none;
+    padding: 8px 12px;
+    border: 2px inset #a33;
+    background: rgba(60, 10, 10, 0.6);
+    color: #f2b8b8;
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+  }
+
+  .startrow { text-align: center; margin: 16px 0 8px; }
+  #startBtn {
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 24px;
+    letter-spacing: 2px;
+    padding: 6px 34px;
+    color: #fff;
+    background: #7a0000;
+    border: 4px outset #b33;
+    text-transform: uppercase;
+  }
+  #startBtn:disabled { color: #866; background: #2a0000; border-color: #533; cursor: default; }
+  #startBtn:not(:disabled):hover { background: #a00000; }
+
+  .badges { text-align: center; margin: 10px 0 4px; }
+  .badge {
+    display: inline-block;
+    margin: 2px 3px;
+    padding: 2px 7px;
+    border: 1px solid #444;
+    background: #101010;
+    color: #6a6a6a;
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  /* The build stamp, dressed as a 1997 hit counter. */
+  #buildinfo {
+    display: block;
+    text-align: center;
+    margin: 6px auto 0;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    color: #00dd44;
+    background: #030903;
+    border: 2px inset #333;
+    padding: 3px 8px;
+  }
+
+  /* -------- the game stage (functional, unchanged behavior) -------- */
+  #stage {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #hud {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 6px 12px;
+    border: 2px ridge #555;
+    background: rgba(0, 0, 0, 0.6);
+    font-size: 13px;
+    opacity: 0.07;
+    transition: opacity 0.15s ease;
+  }
+  #hud:hover, #hud:focus-within { opacity: 1; }
+  #hud label { display: inline-flex; align-items: center; gap: 5px; color: #b0b0b0; }
+  #hud select, #hud button { font-family: "Courier New", monospace; font-size: 13px; }
+  #fpsbox {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    z-index: 10;
+    padding: 4px 8px;
+    border: 1px solid #333;
+    background: rgba(0, 0, 0, 0.6);
+    color: #8f8;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+  }
+  #mousehint {
+    display: none;
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    padding: 6px 12px;
+    border: 1px solid #333;
+    background: rgba(0, 0, 0, 0.65);
+    color: #cfc;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  #canvas { display: block; background: #000; }
+  #canvas.crisp { image-rendering: pixelated; }
+  #canvas.smooth { image-rendering: auto; }
+  #filtercanvas {
+    display: none;
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    image-rendering: auto;
+    background: #000;
+  }
+  #errbox {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    max-width: 640px;
+    padding: 14px 18px;
+    border: 2px inset #a33;
+    background: rgba(40, 0, 0, 0.92);
+    color: #f2c9c9;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SETUP SCREEN ==================== -->
+<div id="setup">
+  <div class="masthead">
+    <h1>DOOM <span class="thin">in your</span> BROWSER</h1>
+    <p class="tagline">*** the genuine 1993 engine * no install * no server * just play ***</p>
+  </div>
+  <hr class="flame">
+
+  <div class="box">
+    <div class="boxtitle">&raquo; 1. PICK YOUR GAME &laquo;</div>
+    <p id="freegames"></p>
+    <p class="hint" id="freegamesStatus"></p>
+    <p><label>...or your own WAD: <input type="file" id="wadfile" accept=".wad"></label></p>
+    <p>
+      <label>PWADs: <input type="file" id="pwadfiles" accept=".wad" multiple></label>
+      <label><input type="checkbox" id="mergePwads"> total conversion (merge)</label>
+    </p>
+    <p><label>DeHackEd: <input type="file" id="dehfiles" accept=".deh,.bex" multiple></label></p>
+    <p class="hint">Chex episodes = the three quests. Everything else you might
+      wonder about lives in the README. Legendary but licensing-murky, read up
+      before hunting them down:
+      <a href="https://doomwiki.org/wiki/Aliens_TC" target="_blank" rel="noopener noreferrer">Aliens TC</a> *
+      <a href="https://doomwiki.org/wiki/Batman_Doom" target="_blank" rel="noopener noreferrer">Batman Doom</a> *
+      <a href="https://www.doomworld.com/files/file/9761-star-wars-for-doom2-v133-final-release/" target="_blank" rel="noopener noreferrer">Star Wars</a></p>
+  </div>
+
+  <div class="box">
+    <div class="boxtitle">&raquo; 2. CONTROLS &laquo;</div>
+    <p class="hint">Mouse aims, both buttons fire, Esc releases. Names below are
+      KeyboardEvent.code values.</p>
+    <div id="keybinds">
+    <label>Move Forward: <input id="bind-up"     value="KeyW"></label>
+    <label>Move Backward: <input id="bind-down"   value="KeyS"></label>
+    <label>Strafe Left: <input id="bind-sleft"  value="KeyA"></label>
+    <label>Strafe Right: <input id="bind-sright" value="KeyD"></label>
+    <label>Turn Left: <input id="bind-left"   value="ArrowLeft"></label>
+    <label>Turn Right: <input id="bind-right"  value="ArrowRight"></label>
+    <label>Fire: <input id="bind-fire"   value="KeyF"></label>
+    <label>Use / Open (doors, switches): <input id="bind-use" value="KeyE"></label>
+  </div>
+    <p>
+      <label><input type="checkbox" id="rawInput" checked> raw input</label>
+      &nbsp;&nbsp;
+      <label><input type="checkbox" id="invertLook"> invert look</label>
+    </p>
+  </div>
+
+  <div class="box">
+    <div class="boxtitle">&raquo; 3. VIDEO &amp; FEEL &laquo;</div>
+    <p>
+      <label>Filter: <select id="filterMode">
+        <option value="crisp" selected>Crisp (original pixels)</option>
+        <option value="smooth">Smooth</option>
+        <option value="hq2x">hq2x (GPU)</option>
+        <option value="hq4x">hq4x (GPU)</option>
+        <option value="hq8x">hq8x (GPU, max)</option>
+        <option value="xbr2x">xBR 2x (GPU)</option>
+        <option value="xbr4x">xBR 4x (GPU)</option>
+        <option value="xbr8x">xBR 8x (GPU, max)</option>
+        <option value="dcci2x">DCCI 2x (GPU)</option>
+        <option value="dcci4x">DCCI 4x (GPU)</option>
+        <option value="dcci8x">DCCI 8x (GPU, max)</option>
+      </select></label>
+      &nbsp;
+      <label>Aspect: <select id="aspectMode">
+        <option value="4:3" selected>4:3 (original look)</option>
+        <option value="square">Square pixels (fill by buffer)</option>
+      </select></label>
+    </p>
+    <p>
+      <label>Sens X: <select id="sensXMode">
+        <option value="0.25">Extra low</option>
+        <option value="0.5">Low</option>
+        <option value="1">Normal</option>
+        <option value="1.5" selected>High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
+      </select></label>
+      &nbsp;
+      <label>Sens Y: <select id="sensYMode">
+        <option value="0.25">Extra low</option>
+        <option value="0.5" selected>Low</option>
+        <option value="1">Normal</option>
+        <option value="1.5">High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
+      </select></label>
+    </p>
+  </div>
+
+  <!-- Shown when the current WAD selection cannot start (see JavaScript). -->
+  <p id="setupwarn"></p>
+
+  <p class="startrow">
+    <button id="startBtn" disabled>Start DOOM</button>
+  </p>
+
+  <div class="badges">
+    <span class="badge">100% VANILLA ENGINE</span><span class="badge">GPL SOURCE SINCE 1997</span><span class="badge">BEST VIEWED IN ANY BROWSER</span><span class="badge">NO COOKIES * NO TRACKING * NO SERVER</span>
+  </div>
+  <!-- Filled from JavaScript with the build stamp injected by install.sh. -->
+  <p class="hint" id="buildinfo"></p>
+</div>
+
+<!-- ==================== GAME STAGE ==================== -->
+<div id="stage">
+  <!-- Floating control bar (visible while playing). -->
+  <div id="hud">
+    <label>Filter:
+      <select id="filterModeHud">
+        <option value="crisp">Crisp</option>
+        <option value="smooth">Smooth</option>
+        <option value="hq2x">hq2x</option>
+        <option value="hq4x">hq4x</option>
+        <option value="hq8x">hq8x</option>
+        <option value="xbr2x">xBR 2x</option>
+        <option value="xbr4x">xBR 4x</option>
+        <option value="xbr8x">xBR 8x</option>
+        <option value="dcci2x">DCCI 2x</option>
+        <option value="dcci4x">DCCI 4x</option>
+        <option value="dcci8x">DCCI 8x</option>
+      </select>
+    </label>
+    <label>Aspect:
+      <select id="aspectModeHud">
+        <option value="4:3">4:3</option>
+        <option value="square">Square</option>
+      </select>
+    </label>
+    <label>Sens X:
+      <select id="sensXModeHud">
+        <option value="0.25">Extra low</option>
+        <option value="0.5">Low</option>
+        <option value="1">Normal</option>
+        <option value="1.5" selected>High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
+      </select>
+    </label>
+    <label>Sens Y:
+      <select id="sensYModeHud">
+        <option value="0.25">Extra low</option>
+        <option value="0.5" selected>Low</option>
+        <option value="1">Normal</option>
+        <option value="1.5">High</option>
+        <option value="2">Higher</option>
+        <option value="3">Very high</option>
+        <option value="4.5">Extra high</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="fpsToggle" checked> FPS</label>
+    <button id="fullscreenBtn" type="button">Fullscreen</button>
+  </div>
+
+  <!-- FPS readout (top-right), fed by a frame counter inside the engine. -->
+  <div id="fpsbox">FPS: --</div>
+
+  <!-- Output canvas for the GPU pixel filters (hq2x, xBR, DCCI). -->
+  <canvas id="filtercanvas"></canvas>
+
+  <!-- Shown while the game runs without the mouse captured. -->
+  <div id="mousehint">Click the game to capture the mouse. Mouse looks around, mouse buttons shoot, Esc releases the mouse.</div>
+
+  <!-- The game canvas. tabindex="-1" lets us focus it from code. -->
+  <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+
+  <!-- Shown only if the engine fails to start (see showFatalError below). -->
+  <div id="errbox"></div>
+</div>
+
+<script>
+/*
+ * Compatibility shim, and it must run BEFORE the engine script below.
+ *
+ * Some engine builds ask the browser's TextDecoder to read text straight out
+ * of the game's memory. When that memory is allowed to grow, some browsers
+ * refuse with:
+ *   TypeError: Failed to execute 'decode' on 'TextDecoder':
+ *   The provided ArrayBuffer value must not be resizable
+ * (Seen in the wild here: simply writing the WAD into the virtual filesystem
+ * does a routine "does this file exist yet?" check, and building that check's
+ * error message decodes a string from growable memory, killing startup.)
+ *
+ * The fix is simple: hand TextDecoder a COPY of the bytes instead, because a
+ * copy lives in a plain fixed-size buffer. This wrapper does that
+ * automatically, only when actually needed, and changes nothing otherwise.
+ */
+(function () {
+  if (typeof TextDecoder === 'undefined') return; // very old browser, nothing to do
+  var originalDecode = TextDecoder.prototype.decode;
+  TextDecoder.prototype.decode = function (input, options) {
+    if (input && ArrayBuffer.isView(input)) {
+      var buf = input.buffer;
+      // "resizable" (ArrayBuffer) and "growable" (SharedArrayBuffer) are true
+      // when the underlying memory can change size, which is exactly what
+      // decode() rejects. slice() copies the bytes into a fresh fixed buffer.
+      if (buf && (buf.resizable === true || buf.growable === true)) {
+        input = input.slice();
+      }
+    }
+    return originalDecode.call(this, input, options);
+  };
+})();
+</script>
+
+<!-- The compiled engine. Defines the global DoomModule(...) factory. -->
+<script src="doomgeneric.js"></script>
+
+<script>
+"use strict";
+
+/* =========================================================================
+ * Build stamp
+ * -------------------------------------------------------------------------
+ * install.sh replaces the placeholder below with the SDK version, internal
+ * resolution, and build time when it writes this file. It is shown on the
+ * setup screen and logged to the console, so "which build am I actually
+ * running?" is always answerable at a glance. Browsers can cache file://
+ * pages surprisingly hard, and a stale page looks identical to a fresh one.
+ * ========================================================================= */
+
+const BUILD_INFO = '__BUILD_INFO__';
+console.log('DOOM page build: ' + BUILD_INFO);
+document.getElementById('buildinfo').textContent = 'Build: ' + BUILD_INFO;
+
+/* =========================================================================
+ * State
+ * ========================================================================= */
+
+// The bytes of the WAD the user picked. Filled in by the file input handler.
+let wadData = null;
+
+// Becomes true only once the engine is actually running. The key-remap logic
+// checks THIS (not which element has focus) before intercepting keys. Using a
+// focus check here proved unreliable right after clicking Start, which is the
+// bug that let the browser eat arrow keys / space and made bindings feel
+// inconsistent. A simple "has the game started yet?" flag is reliable.
+let gameStarted = false;
+
+// Grab the elements we use more than once.
+const canvas        = document.getElementById('canvas');
+const stage         = document.getElementById('stage');
+const startBtn      = document.getElementById('startBtn');
+const filterSetup   = document.getElementById('filterMode');
+const aspectSetup   = document.getElementById('aspectMode');
+const filterHud     = document.getElementById('filterModeHud');
+const aspectHud     = document.getElementById('aspectModeHud');
+const sensXSetup    = document.getElementById('sensXMode');
+const sensXHud      = document.getElementById('sensXModeHud');
+const sensYSetup    = document.getElementById('sensYMode');
+const sensYHud      = document.getElementById('sensYModeHud');
+const rawInput      = document.getElementById('rawInput');
+const invertLook    = document.getElementById('invertLook');
+const mousehint     = document.getElementById('mousehint');
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+const fpsToggle     = document.getElementById('fpsToggle');
+const fpsbox        = document.getElementById('fpsbox');
+const filtercanvas  = document.getElementById('filtercanvas');
+const errbox        = document.getElementById('errbox');
+
+// Filled in once the engine has booted; the mouse handlers need it to call
+// the two C bridge functions the engine exports.
+let doomModule = null;
+
+/* =========================================================================
+ * Engine console capture
+ * -------------------------------------------------------------------------
+ * Everything the engine prints (its startup log, and crucially its ERROR
+ * messages) is captured into a small ring buffer, as well as mirrored to
+ * the browser console. When something goes wrong, the last few lines are
+ * shown in the on-page error box, so the engine's own explanation (for
+ * example "You cannot -file with the shareware version") is visible without
+ * opening developer tools.
+ * ========================================================================= */
+
+const engineLog = [];
+
+function engineLogPush(text) {
+  engineLog.push(String(text));
+  if (engineLog.length > 40) engineLog.shift();   // keep only the tail
+}
+
+/* =========================================================================
+ * Fatal error reporting
+ * -------------------------------------------------------------------------
+ * If the engine fails to start, show a readable message on the page instead
+ * of leaving a silent black screen (otherwise the error only appears in the
+ * developer console, where most people never look).
+ * ========================================================================= */
+
+function showFatalError(err) {
+  // Prefer the error's own message; fall back to stringifying whatever we got.
+  let msg = (err && err.message) ? err.message : String(err);
+
+  // The engine's own last words usually explain the failure far better than
+  // a JavaScript exception does, so show them front and center.
+  const tail = engineLog.filter(function (l) { return l && l.trim(); }).slice(-6);
+  if (tail.length > 0) {
+    msg += '\n\nEngine output:\n' + tail.join('\n');
+  }
+
+  errbox.textContent =
+    'DOOM failed to start.\n\n' +
+    msg + '\n\n' +
+    'If the engine output above names the problem (for example a WAD it\n' +
+    'refuses to load), fix that and reload the page. If instead the console\n' +
+    'mentions TextDecoder, a resizable ArrayBuffer, or an unsafe attempt to\n' +
+    'load a file:// URL, the engine was built with an incompatible\n' +
+    'toolchain: update this repo, re-run ./install.sh, then reload with a\n' +
+    'hard refresh (Ctrl+Shift+R).\n\n' +
+    'This page build: ' + BUILD_INFO;
+  errbox.style.display = 'block';
+  console.error('DOOM failed to start:', err);
+}
+
+/* =========================================================================
+ * WAD file picker
+ * ========================================================================= */
+
+// Read just enough of a WAD to list its lump names. A WAD starts with a
+// 12-byte header (4-byte magic, lump count, directory offset); the
+// directory holds one 16-byte entry per lump with an 8-byte name. This is
+// how every Doom engine identifies what a WAD contains.
+function wadLumpNames(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const magic = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+  if (magic !== 'IWAD' && magic !== 'PWAD') return null;
+  const numLumps = dv.getInt32(4, true);
+  const dirOfs = dv.getInt32(8, true);
+  const names = new Set();
+  for (let i = 0; i < numLumps; i++) {
+    const entry = dirOfs + i * 16;
+    if (entry + 16 > bytes.length) break;   // truncated file: stop safely
+    let name = '';
+    for (let j = 0; j < 8; j++) {
+      const c = bytes[entry + 8 + j];
+      if (c === 0) break;
+      name += String.fromCharCode(c);
+    }
+    names.add(name.toUpperCase());
+  }
+  return names;
+}
+
+// Decide what filename the engine should see for the chosen IWAD. This
+// matters more than it sounds: the engine identifies IWADs by FILENAME
+// first (doom2.wad means Doom II, doom1.wad means shareware, and so on,
+// from its own name table in d_iwad.c) and only inspects the contents for
+// names it does not recognize. Older versions of this page presented every
+// file as doom1.wad, which made the engine treat even a real doom2.wad as
+// shareware Doom 1 and refuse PWADs with it.
+function chooseIwadName(realName, bytes) {
+  const names = wadLumpNames(bytes) || new Set();
+  const base = String(realName || '').toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+
+  // Filenames this Doom engine knows (from its d_iwad.c table).
+  const known = ['doom2.wad', 'plutonia.wad', 'tnt.wad', 'doom.wad',
+                 'doom1.wad', 'chex.wad', 'hacx.wad', 'freedm.wad',
+                 'freedoom2.wad', 'freedoom1.wad'];
+
+  // What the contents say it is: MAP01 means a Doom II style WAD, episode
+  // lumps beyond E1 mean full Doom 1, episode 1 only means shareware.
+  const contentName = names.has('MAP01') ? 'doom2.wad'
+    : (names.has('E2M1') || names.has('E3M1') || names.has('E4M1')) ? 'doom.wad'
+    : 'doom1.wad';
+
+  if (known.indexOf(base) !== -1) {
+    // Trust a recognized filename, except a full WAD misnamed doom1.wad,
+    // which the engine would wrongly treat as shareware.
+    if (base === 'doom1.wad' && contentName !== 'doom1.wad') return contentName;
+    return base;
+  }
+  return contentName;
+}
+
+// Will the engine treat this IWAD as shareware? It refuses PWADs with
+// shareware (by design, since 1993). The engine picks the game MODE from
+// the episode lumps: Doom 1 family WADs without E3M1 or E4M1 run as
+// shareware. Doom II family WADs are never shareware.
+function engineWillTreatAsShareware(iwadName, bytes) {
+  const names = wadLumpNames(bytes) || new Set();
+  const doom2Family = ['doom2.wad', 'plutonia.wad', 'tnt.wad', 'hacx.wad',
+                       'freedm.wad', 'freedoom2.wad'];
+  if (doom2Family.indexOf(iwadName) !== -1 || names.has('MAP01')) return false;
+  return !names.has('E3M1') && !names.has('E4M1');
+}
+
+// The engine-facing name and shareware status of the chosen main WAD.
+let iwadName = 'doom.wad';
+let wadIsShareware = false;
+
+// Show or clear the setup-screen warning about shareware + PWADs. Returns
+// true when the current selection cannot start.
+function updateSetupWarning() {
+  const warnEl = document.getElementById('setupwarn');
+  const anyPwads = pwadData.some(function (p) { return p; });
+  if (wadIsShareware && anyPwads) {
+    warnEl.textContent =
+      'The selected main WAD is identified as shareware (episode 1 only, ' +
+      'no E3M1 or E4M1 maps), and the engine refuses add-on files with it ' +
+      '(a vanilla rule, not a bug). Pick a full IWAD such as doom.wad, ' +
+      'doom2.wad, or Freedoom, or clear the PWAD selection.';
+    warnEl.style.display = 'block';
+    return true;
+  }
+  warnEl.style.display = 'none';
+  return false;
+}
+
+// When the user picks a file, read it into memory and enable the Start button.
+document.getElementById('wadfile').addEventListener('change', function (e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (ev) {
+    // Uint8Array is a plain array of bytes, which is what the engine's virtual
+    // filesystem expects.
+    wadData = new Uint8Array(ev.target.result);
+    iwadName = chooseIwadName(file.name, wadData);
+    wadIsShareware = engineWillTreatAsShareware(iwadName, wadData);
+    console.log('IWAD will be presented to the engine as: ' + iwadName
+                + (wadIsShareware ? ' (shareware)' : ''));
+    updateSetupWarning();
+    startBtn.disabled = false;
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// Optional PWADs (add-on mods and maps). Each selected file is read into
+// memory here and handed to the engine with the -file option at start.
+// Entries are indexed so the load order matches the selection order even
+// though the files finish reading at different times.
+let pwadData = [];   // array of { name, bytes }
+
+document.getElementById('pwadfiles').addEventListener('change', function (e) {
+  const files = Array.from(e.target.files || []);
+  pwadData = [];
+  files.forEach(function (file, index) {
+    const reader = new FileReader();
+    reader.onload = function (ev) {
+      const bytes = new Uint8Array(ev.target.result);
+      const lumps = wadLumpNames(bytes);
+      pwadData[index] = {
+        // A simple, safe name for the virtual filesystem; the engine only
+        // cares about the WAD's contents, not its filename.
+        name: 'pwad_' + index + '.wad',
+        bytes: bytes,
+        // Remember whether this PWAD carries a DeHackEd patch as a lump;
+        // if any loaded PWAD does, the engine is started with -dehlump so
+        // those patches actually apply.
+        hasDehacked: !!(lumps && lumps.has('DEHACKED')),
+      };
+      updateSetupWarning();
+    };
+    reader.readAsArrayBuffer(file);
+  });
+  updateSetupWarning();
+});
+
+// Optional DeHackEd patch files (.deh / .bex). Unlike PWADs these KEEP
+// their real filenames in the virtual filesystem: the engine looks for
+// specific names in one case (Chex Quest wants chex.deh next to the IWAD).
+let dehData = [];   // array of { name, bytes }
+
+document.getElementById('dehfiles').addEventListener('change', function (e) {
+  const files = Array.from(e.target.files || []);
+  dehData = [];
+  const usedNames = new Set();
+  files.forEach(function (file, index) {
+    const reader = new FileReader();
+    // Sanitize but preserve the real name; deduplicate collisions.
+    let name = String(file.name || 'patch.deh').toLowerCase()
+                 .replace(/[^a-z0-9._-]/g, '_');
+    if (usedNames.has(name)) name = index + '_' + name;
+    usedNames.add(name);
+    reader.onload = function (ev) {
+      dehData[index] = { name: name, bytes: new Uint8Array(ev.target.result) };
+    };
+    reader.readAsArrayBuffer(file);
+  });
+});
+
+/* =========================================================================
+ * Free games (one-click loading from the local freeware pack)
+ * -------------------------------------------------------------------------
+ * install.sh optionally downloads freely redistributable games and packs
+ * each file as base64 inside freeware/<key>.js. Loading one here is just a
+ * script tag (which file:// allows), then decoding the base64 into bytes.
+ * Total conversions (Chex Quest, Harmony) ride on a Freedoom base WAD and
+ * are loaded through the engine's -merge option so their sprites and flats
+ * display properly, which plain -file cannot do on a vanilla engine.
+ * ========================================================================= */
+
+// Total-conversion WADs to pass via -merge, set by the buttons below.
+let mergeSpecs = [];   // array of { name, bytes }
+
+const FREEWARE_TITLES = [
+  { key: 'doom1',     label: 'Doom Shareware',    iwad: 'doom1' },
+  { key: 'freedoom1', label: 'Freedoom Phase 1',  iwad: 'freedoom1' },
+  { key: 'freedoom2', label: 'Freedoom Phase 2',  iwad: 'freedoom2' },
+  { key: 'hacx',      label: 'HACX 1.2',          iwad: 'hacx' },
+  { key: 'chex3v',    label: 'Chex Quest Trilogy', iwad: 'chex3v', deh: ['chex3v_deh'] },
+  { key: 'harmony',   label: 'Harmony',           iwad: 'freedoom2', merge: ['harmonyc'], deh: ['harmony_deh'] },
+  { key: 'wolfen1',   label: 'WolfenDoom: First Encounter', iwad: 'freedoom2', merge: ['wolfen1'] },
+  { key: 'strain',    label: 'STRAIN',            iwad: 'freedoom2', merge: ['strain'], deh: ['strain_deh'] },
+];
+
+// Decode base64 into bytes (a few MB decodes in well under a second).
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Load one packed file by injecting its script tag; cached per key.
+const freewareCache = {};
+function loadFreewarePart(key) {
+  if (!freewareCache[key]) {
+    freewareCache[key] = new Promise(function (resolve, reject) {
+      const sc = document.createElement('script');
+      sc.src = 'freeware/' + key + '.js';
+      sc.onload = function () {
+        const entry = window.WASM_BUILDER_FREEWARE && window.WASM_BUILDER_FREEWARE[key];
+        if (!entry) { reject(new Error(key + ': pack file is malformed')); return; }
+        const bytes = b64ToBytes(entry.b64);
+        entry.b64 = null;   // free the big string
+        resolve({ name: entry.name, bytes: bytes });
+      };
+      sc.onerror = function () {
+        reject(new Error(key + ' is not in the local pack. Re-run ./install.sh and answer Y to the freeware pack.'));
+      };
+      document.head.appendChild(sc);
+    });
+  }
+  return freewareCache[key];
+}
+
+function selectFreewareTitle(title) {
+  const status = document.getElementById('freegamesStatus');
+  status.textContent = 'Loading ' + title.label + '...';
+  const keys = [title.iwad].concat(title.merge || []).concat(title.deh || []);
+  Promise.all(keys.map(loadFreewarePart)).then(function (parts) {
+    const iwadPart = parts[0];
+    const mergeParts = parts.slice(1, 1 + (title.merge ? title.merge.length : 0));
+    const dehParts = parts.slice(1 + (title.merge ? title.merge.length : 0));
+
+    // Apply exactly as if the user had picked these files by hand.
+    wadData = iwadPart.bytes;
+    iwadName = chooseIwadName(iwadPart.name, iwadPart.bytes);
+    wadIsShareware = engineWillTreatAsShareware(iwadName, iwadPart.bytes);
+    mergeSpecs = mergeParts.map(function (p) { return { name: p.name, bytes: p.bytes }; });
+    dehData = dehParts.map(function (p) { return { name: p.name, bytes: p.bytes }; });
+    pwadData = [];   // a fresh title stands alone; re-pick PWADs if wanted
+
+    let mb = 0;
+    parts.forEach(function (p) { mb += p.bytes.length; });
+    console.log('Free game loaded: ' + title.label + ' as ' + iwadName
+                + (mergeSpecs.length ? ' + merge: ' + mergeSpecs.map(function (p) { return p.name; }).join(', ') : '')
+                + (dehData.length ? ' + deh: ' + dehData.map(function (p) { return p.name; }).join(', ') : ''));
+    status.textContent = title.label + ' ready (' + (mb / 1048576).toFixed(1)
+                       + ' MB in memory). Press Start DOOM.';
+    updateSetupWarning();
+    startBtn.disabled = false;
+  }).catch(function (err) {
+    status.textContent = 'Could not load ' + title.label + ': ' + err.message;
+  });
+}
+
+// Build the buttons.
+(function () {
+  const holder = document.getElementById('freegames');
+  FREEWARE_TITLES.forEach(function (title) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = title.label;
+    b.style.marginRight = '8px';
+    b.style.marginBottom = '6px';
+    b.addEventListener('click', function () { selectFreewareTitle(title); });
+    holder.appendChild(b);
+  });
+})();
+
+/* =========================================================================
+ * Key remapping
+ * -------------------------------------------------------------------------
+ * How it works: Doom (via SDL) listens for keyboard events on the page. We
+ * install our own listeners that run FIRST (capture phase). For any key the
+ * user wants remapped, we cancel the real key and dispatch a synthetic event
+ * for the key Doom should see instead. For keys Doom uses directly (arrows,
+ * space, etc.) we simply stop the browser's default action (scrolling, etc.).
+ *
+ * Doom's built-in defaults (from its own input code):
+ *   Left Ctrl / Right Ctrl -> Fire
+ *   Space                  -> Use / Open
+ *   Arrow keys             -> move / turn
+ * So to make F = Fire we remap F -> ControlLeft, and to make E = Use we remap
+ * E -> Space. That is why Use is E by default, and it genuinely triggers Use
+ * (not Fire).
+ * ========================================================================= */
+
+// Build the "physical key -> key Doom should see" table from the input
+// fields. The right-hand values are the keys the ENGINE understands:
+// arrows move and turn, Comma and Period strafe (Doom's classic , and .
+// strafe keys, wired up in the engine's browser layer), Ctrl fires, Space
+// uses. Identity mappings (like ArrowLeft to ArrowLeft) are fine: the key
+// passes through, and the browser's default action still gets cancelled.
+function buildRemapTable() {
+  return {
+    [document.getElementById('bind-up').value]:     'ArrowUp',     // move forward
+    [document.getElementById('bind-down').value]:   'ArrowDown',   // move backward
+    [document.getElementById('bind-sleft').value]:  'Comma',       // strafe left
+    [document.getElementById('bind-sright').value]: 'Period',      // strafe right
+    [document.getElementById('bind-left').value]:   'ArrowLeft',   // turn left
+    [document.getElementById('bind-right').value]:  'ArrowRight',  // turn right
+    [document.getElementById('bind-fire').value]:   'ControlLeft', // Fire
+    [document.getElementById('bind-use').value]:    'Space',       // Use / Open
+  };
+}
+
+// Keys Doom itself reacts to. We always cancel the browser's default action for
+// these while the game is running, so (for example) the arrow keys and Space do
+// not scroll the page or activate browser shortcuts.
+const BASE_MANAGED_CODES = [
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Space', 'Enter', 'Escape', 'Tab',
+  'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight',
+  'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11',
+  'Minus', 'Equal',
+];
+
+// The active bindings. Kept in outer variables (not captured in a closure)
+// so that starting the game again after a quit refreshes the bindings
+// without stacking duplicate event listeners.
+let activeRemapTable = null;
+let activeManagedCodes = null;
+let remapListenersInstalled = false;
+
+function installKeyRemap(remapTable) {
+  activeRemapTable = remapTable;
+  // The full set of key codes we manage: the base list, plus every physical
+  // key the user bound, plus every key Doom should receive.
+  activeManagedCodes = new Set([
+    ...BASE_MANAGED_CODES,
+    ...Object.keys(remapTable),
+    ...Object.values(remapTable),
+  ]);
+
+  // The listeners themselves are installed exactly once per page load.
+  if (remapListenersInstalled) return;
+  remapListenersInstalled = true;
+
+  function remapEvent(e) {
+    // Do nothing until the engine is running. THIS is the reliability fix:
+    // we gate on gameStarted, not on document.activeElement === canvas.
+    if (!gameStarted) return;
+
+    // Ignore keys we do not manage, so normal typing elsewhere is unaffected.
+    if (!activeManagedCodes.has(e.code)) return;
+
+    const mapped = activeRemapTable[e.code];
+
+    if (mapped && mapped !== e.code) {
+      // This is a remapped key. Cancel the original and send Doom the
+      // substitute key instead.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const synthetic = new KeyboardEvent(e.type, {
+        code: mapped,
+        key: e.key,
+        bubbles: true,
+        cancelable: true,
+      });
+      e.target.dispatchEvent(synthetic);
+    } else {
+      // A key Doom uses directly (or a synthetic one we just dispatched):
+      // just prevent the browser's default action. Do NOT stop propagation,
+      // so the event still reaches Doom's own listeners.
+      e.preventDefault();
+    }
+  }
+
+  // Capture phase (the "true" third argument) means our handler runs before
+  // Doom's, so our substitutions are in place by the time Doom sees the event.
+  document.addEventListener('keydown', remapEvent, true);
+  document.addEventListener('keyup', remapEvent, true);
+
+  // Clicking the canvas focuses it (helps some browsers route input
+  // reliably) and captures the mouse for mouse look. Any button works as
+  // the capture click; buttons only reach the game while captured.
+  canvas.addEventListener('mousedown', function () {
+    canvas.focus();
+    if (gameStarted && document.pointerLockElement !== canvas) {
+      captureMouse();
+    }
+  });
+}
+
+/* =========================================================================
+ * Mouse look (pointer lock)
+ * -------------------------------------------------------------------------
+ * Clicking the game "captures" the mouse using the browser's pointer lock,
+ * the same mechanism every browser FPS uses. While captured:
+ *   - moving the mouse turns the view and looks up and down, with separate
+ *     horizontal and vertical sensitivity,
+ *   - both mouse buttons shoot,
+ *   - Esc releases the mouse (a browser rule that pages cannot override;
+ *     handily, Esc also opens Doom's own menu).
+ * The motion and button state are handed to two small functions compiled
+ * into the engine (DG_EM_MouseMove / DG_EM_MouseButtons), which turn them
+ * into standard Doom mouse events.
+ * ========================================================================= */
+
+// Sub-pixel remainders: sensitivity can be fractional (for example 0.5), so
+// keep the fraction that did not fit into a whole pixel and add it to the
+// next movement instead of throwing it away.
+let mouseAccX = 0;
+let mouseAccY = 0;
+
+function pointerLocked() {
+  return document.pointerLockElement === canvas;
+}
+
+// Show the capture hint only while the game runs without the mouse captured.
+function updateMouseHint() {
+  mousehint.style.display = (gameStarted && !pointerLocked()) ? 'block' : 'none';
+}
+
+// Capture the mouse. "Raw input" asks the browser for unaccelerated motion
+// (the pointer lock unadjustedMovement option), which is what disables OS
+// mouse acceleration. Not every browser supports it: newer ones return a
+// promise that rejects when refused, in which case we quietly fall back to
+// a plain capture so the game stays playable (just with acceleration).
+// Older browsers return nothing and ignore the option, which is the same
+// graceful fallback by accident.
+function captureMouse() {
+  const wantRaw = rawInput.checked;
+  let request;
+  try {
+    request = canvas.requestPointerLock(wantRaw ? { unadjustedMovement: true } : undefined);
+  } catch (err) {
+    // A very old API that dislikes the options argument: capture plainly.
+    request = canvas.requestPointerLock();
+  }
+  if (wantRaw && request && typeof request.catch === 'function') {
+    request.catch(function () {
+      console.log('Raw input (unadjustedMovement) not supported here; capturing with acceleration.');
+      canvas.requestPointerLock();
+    });
+  }
+}
+
+// Translate held browser buttons into the engine's mouse-button bitfield.
+// The engine treats bit 0 as Fire; both the left and the right mouse button
+// shoot. (The first click on an uncaptured game only captures the mouse:
+// buttons are not forwarded until capture is active, so that click never
+// fires a shot.)
+function engineButtonBits(e) {
+  let bits = 0;
+  if (e.buttons & 1) bits |= 1;   // left button held  -> engine Fire bit
+  if (e.buttons & 2) bits |= 1;   // right button held -> engine Fire bit
+  return bits;
+}
+
+document.addEventListener('mousemove', function (e) {
+  if (!gameStarted || !doomModule || !pointerLocked()) return;
+
+  // Separate sensitivities per axis: X scales turning, Y scales looking.
+  const sensX = parseFloat(sensXHud.value) || 1;
+  const sensY = parseFloat(sensYHud.value) || 1;
+  mouseAccX += e.movementX * sensX;
+  mouseAccY += e.movementY * sensY * (invertLook.checked ? -1 : 1);
+
+  // Send whole pixels to the engine, keep the fractional remainder.
+  const dx = Math.trunc(mouseAccX);
+  const dy = Math.trunc(mouseAccY);
+  if (dx !== 0 || dy !== 0) {
+    doomModule._DG_EM_MouseMove(dx, dy);
+    mouseAccX -= dx;
+    mouseAccY -= dy;
+  }
+});
+
+function sendMouseButtons(e) {
+  if (!gameStarted || !doomModule || !pointerLocked()) return;
+  e.preventDefault();
+  doomModule._DG_EM_MouseButtons(engineButtonBits(e));
+}
+document.addEventListener('mousedown', sendMouseButtons);
+document.addEventListener('mouseup', sendMouseButtons);
+
+document.addEventListener('pointerlockchange', function () {
+  updateMouseHint();
+  if (!pointerLocked() && doomModule) {
+    // The capture ended (Esc, alt-tab, etc.): release all engine buttons so
+    // the player does not keep firing forever.
+    doomModule._DG_EM_MouseButtons(0);
+  }
+  if (gameStarted) canvas.focus();
+});
+
+/* =========================================================================
+ * FPS counter
+ * -------------------------------------------------------------------------
+ * The engine increments a frame counter every time it renders (see the
+ * engine patch). Once a second we read that counter and show the difference
+ * as frames per second. Note what this measures: how often the engine
+ * RENDERS. Doom's game logic always runs at its classic fixed 35 Hz
+ * regardless; the render loop is driven by the browser and can run faster.
+ * ========================================================================= */
+
+let fpsLastFrames = 0;
+let fpsLastTics = 0;
+let fpsLastTime = 0;
+
+function updateFps() {
+  if (!doomModule || !gameStarted) return;
+  const now = performance.now();
+  const frames = doomModule._DG_EM_GetFrameCount();
+  const tics = doomModule._DG_EM_GetGameTic();
+  if (fpsLastTime > 0 && now > fpsLastTime) {
+    const dt = (now - fpsLastTime) / 1000;
+    const fps = (frames - fpsLastFrames) / dt;
+    const tps = (tics - fpsLastTics) / dt;
+    // Two different speeds, and telling them apart matters on heavy maps:
+    //   FPS  = how often the engine renders (browser driven).
+    //   game = game-logic tics per second; 35 is full speed. Fewer means
+    //          the map is too heavy to simulate in real time, and the game
+    //          runs in slow motion (the page itself stays responsive).
+    fpsbox.textContent =
+      'FPS: ' + Math.round(fps) + '  |  game: ' + tps.toFixed(1) + '/35';
+  }
+  fpsLastFrames = frames;
+  fpsLastTics = tics;
+  fpsLastTime = now;
+}
+
+// The HUD checkbox shows and hides the readout (measurement itself is so
+// cheap that it simply keeps running either way).
+fpsToggle.addEventListener('change', function () {
+  fpsbox.style.display = (fpsToggle.checked && gameStarted) ? 'block' : 'none';
+  fpsToggle.blur();
+  if (gameStarted) canvas.focus();
+});
+
+/* =========================================================================
+ * Display scaling and filtering
+ * -------------------------------------------------------------------------
+ * The engine renders into a fixed pixel buffer (canvas.width x canvas.height,
+ * e.g. 640x400). We never change that buffer; we only change the canvas's
+ * DISPLAYED size with CSS so it fills the window. The "filter" presets choose
+ * how the browser scales those pixels:
+ *   - Crisp  = nearest-neighbour (image-rendering: pixelated) = original look
+ *   - Smooth = bilinear (image-rendering: auto)               = softened
+ * ========================================================================= */
+
+// Apply the chosen pixel filter. Crisp and Smooth are plain CSS scaling
+// modes on the game canvas. The GPU modes (hq2x, xBR, DCCI) hide the game
+// canvas (it keeps receiving clicks) and show the filtered copy instead;
+// if WebGL is unavailable they quietly fall back to Smooth.
+// { prog: 'hq2x'|'xbr'|'dcci', passes: 1|2 } or null. Two passes doubles
+// the filter twice over (4x total), the "strongest" options.
+let activeGpuFilter = null;
+
+const GPU_FILTER_MODES = {
+  hq2x:   { prog: 'hq2x', passes: 1 },
+  hq4x:   { prog: 'hq2x', passes: 2 },
+  hq8x:   { prog: 'hq2x', passes: 3 },
+  xbr2x:  { prog: 'xbr',  passes: 1 },
+  xbr4x:  { prog: 'xbr',  passes: 2 },
+  xbr8x:  { prog: 'xbr',  passes: 3 },
+  dcci2x: { prog: 'dcci', passes: 1 },
+  dcci4x: { prog: 'dcci', passes: 2 },
+  dcci8x: { prog: 'dcci', passes: 3 },
+};
+
+function setFilter(mode) {
+  const wantsGpu = !!GPU_FILTER_MODES[mode];
+  canvas.classList.remove('crisp', 'smooth');
+  if (wantsGpu && gpuFilterReady()) {
+    activeGpuFilter = GPU_FILTER_MODES[mode];
+    canvas.style.opacity = '0';
+    filtercanvas.style.display = 'block';
+    canvas.classList.add('crisp');   // irrelevant while hidden, kept sane
+  } else {
+    if (wantsGpu) console.log('GPU filters unavailable here; using Smooth instead.');
+    activeGpuFilter = null;
+    canvas.style.opacity = '1';
+    filtercanvas.style.display = 'none';
+    canvas.classList.add((mode === 'smooth' || wantsGpu) ? 'smooth' : 'crisp');
+  }
+  applyScaling();
+}
+
+// Resize the canvas (via CSS) to fit the stage while keeping the chosen aspect
+// ratio. Called on start, on window resize, on fullscreen change, and whenever
+// the engine changes the backing buffer size.
+function applyScaling() {
+  // The engine's render buffer size. Fall back to 640x400 if not set yet.
+  const bufW = canvas.width  || 320;
+  const bufH = canvas.height || 200;
+  if (!bufW || !bufH) return;
+
+  // How much room we have to draw into.
+  const availW = stage.clientWidth;
+  const availH = stage.clientHeight;
+  if (!availW || !availH) return;
+
+  // Desired display shape:
+  //   "4:3"    -> classic Doom look (the original was shown at 4:3).
+  //   "square" -> use the buffer's own shape (square pixels, no stretch).
+  const aspectMode = aspectHud.value;
+  const targetAspect = (aspectMode === '4:3') ? (4 / 3) : (bufW / bufH);
+
+  // Fit a targetAspect rectangle inside the available box (letterboxing).
+  let dispW, dispH;
+  if (availW / availH > targetAspect) {
+    // Window is wider than we need: height is the limiting dimension.
+    dispH = availH;
+    dispW = Math.round(availH * targetAspect);
+  } else {
+    // Window is taller/narrower: width is the limiting dimension.
+    dispW = availW;
+    dispH = Math.round(availW / targetAspect);
+  }
+
+  canvas.style.width  = dispW + 'px';
+  canvas.style.height = dispH + 'px';
+
+  // Keep the GPU filter canvas glued to the exact same screen rectangle.
+  if (filtercanvas.style.display !== 'none') {
+    const r = canvas.getBoundingClientRect();
+    const st = stage.getBoundingClientRect();
+    filtercanvas.style.left = (r.left - st.left) + 'px';
+    filtercanvas.style.top = (r.top - st.top) + 'px';
+    filtercanvas.style.width = r.width + 'px';
+    filtercanvas.style.height = r.height + 'px';
+  }
+}
+
+// Keep the two copies of each control (setup screen and in-game HUD) in sync,
+// then apply the change. After using a control we blur it and refocus the
+// canvas so keyboard input goes back to the game, not the dropdown.
+function wireControl(setupEl, hudEl, onChange) {
+  function sync(fromEl, toEl) {
+    toEl.value = fromEl.value;
+    onChange();
+    fromEl.blur();
+    if (gameStarted) canvas.focus();
+  }
+  setupEl.addEventListener('change', function () { sync(setupEl, hudEl); });
+  hudEl.addEventListener('change',   function () { sync(hudEl, setupEl); });
+}
+
+wireControl(filterSetup, filterHud, function () { setFilter(filterHud.value); });
+wireControl(aspectSetup, aspectHud, function () { applyScaling(); });
+// Sensitivity needs no immediate action: the mousemove handler reads the
+// current values live on every mouse movement.
+wireControl(sensXSetup, sensXHud, function () {});
+wireControl(sensYSetup, sensYHud, function () {});
+
+// Fullscreen toggle. We fullscreen the whole stage (not just the canvas) so the
+// black letterbox background covers the screen too.
+fullscreenBtn.addEventListener('click', function () {
+  if (!document.fullscreenElement) {
+    if (stage.requestFullscreen) stage.requestFullscreen().catch(function () {});
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+  }
+  // The actual resize happens in the fullscreenchange handler below.
+});
+
+// Re-fit whenever the window size or fullscreen state changes.
+window.addEventListener('resize', applyScaling);
+document.addEventListener('fullscreenchange', function () {
+  applyScaling();
+  if (gameStarted) canvas.focus();
+});
+
+// The engine sets the canvas's width/height attributes (its backing buffer)
+// when it initializes, which can happen slightly after we first try to scale.
+// A MutationObserver re-runs applyScaling the moment those attributes change,
+// so the game is always sized correctly no matter the timing.
+const sizeObserver = new MutationObserver(applyScaling);
+sizeObserver.observe(canvas, { attributes: true, attributeFilter: ['width', 'height'] });
+
+/* =========================================================================
+ * GPU pixel filters: hq2x, xBR, and DCCI
+ * -------------------------------------------------------------------------
+ * Each frame, the game canvas is uploaded as a WebGL texture and redrawn at
+ * double resolution through the selected filter shader onto #filtercanvas;
+ * the browser then smooth-scales that 2x image to the window. All three are
+ * GPU adaptations of the classic algorithms:
+ *   hq2x - the widely used lookup-table-free shader formulation
+ *   xBR  - level 1 of Hyllian's edge-interpolating scaler
+ *   DCCI - directional cubic convolution, single-pass adaptation
+ * ========================================================================= */
+
+const FILTER_VERTEX_SRC = [
+  'attribute vec2 aPos;',
+  'varying vec2 vUv;',
+  'void main() {',
+  '  vUv = aPos * 0.5 + 0.5;',
+  '  gl_Position = vec4(aPos, 0.0, 1.0);',
+  '}',
+].join('\n');
+
+// Shared helpers prepended to every fragment shader.
+const FILTER_COMMON_SRC = [
+  'precision mediump float;',
+  'varying vec2 vUv;',
+  'uniform sampler2D uTex;',
+  'uniform vec2 uSrcSize;',
+  'vec3 tap(vec2 base, vec2 offs) {',
+  '  return texture2D(uTex, base + offs / uSrcSize).rgb;',
+  '}',
+  'float cdist(vec3 a, vec3 b) {',           // color distance, luma-weighted
+  '  vec3 w = vec3(0.299, 0.587, 0.114);',
+  '  return dot(abs(a - b), w * 3.0);',
+  '}',
+].join('\n');
+
+// hq2x, lookup-table-free formulation: for each output quadrant, look at the
+// two edge neighbors and the diagonal; when the neighbors match each other
+// but the diagonal breaks, an edge crosses this corner and the center is
+// pulled toward the neighbor pair (harder when the center matches neither).
+const FILTER_HQ2X_SRC = FILTER_COMMON_SRC + '\n' + [
+  'void main() {',
+  '  vec2 px = vUv * uSrcSize;',
+  '  vec2 f = fract(px) - 0.5;',
+  '  vec2 q = vec2(f.x >= 0.0 ? 1.0 : -1.0, f.y >= 0.0 ? 1.0 : -1.0);',
+  '  vec2 base = (floor(px) + 0.5) / uSrcSize;',
+  '  vec3 E = texture2D(uTex, base).rgb;',
+  '  vec3 A = tap(base, vec2(q.x, 0.0));',
+  '  vec3 B = tap(base, vec2(0.0, q.y));',
+  '  vec3 D = tap(base, q);',
+  '  vec3 res = E;',
+  '  bool ab = cdist(A, B) < 0.16;',
+  '  bool ed = cdist(E, D) < 0.16;',
+  '  if (ab && !ed) {',
+  '    bool near = (cdist(E, A) < 0.16) || (cdist(E, B) < 0.16);',
+  '    res = mix(E, 0.5 * (A + B), near ? 0.25 : 0.5);',
+  '  }',
+  '  gl_FragColor = vec4(res, 1.0);',
+  '}',
+].join('\n');
+
+// xBR level 1: detect whether an edge runs along this corner by comparing
+// weighted color distances of the two possible edge orientations; when it
+// does, blend the corner pixel toward whichever edge neighbor matches best.
+const FILTER_XBR_SRC = FILTER_COMMON_SRC + '\n' + [
+  'void main() {',
+  '  vec2 px = vUv * uSrcSize;',
+  '  vec2 f = fract(px) - 0.5;',
+  '  vec2 q = vec2(f.x >= 0.0 ? 1.0 : -1.0, f.y >= 0.0 ? 1.0 : -1.0);',
+  '  vec2 base = (floor(px) + 0.5) / uSrcSize;',
+  '  vec3 E  = texture2D(uTex, base).rgb;',
+  '  vec3 S1 = tap(base, vec2(q.x, 0.0));',       // edge neighbors
+  '  vec3 S2 = tap(base, vec2(0.0, q.y));',
+  '  vec3 D  = tap(base, q);',                    // diagonal
+  '  vec3 O1 = tap(base, vec2(-q.x, 0.0));',      // opposite side taps
+  '  vec3 O2 = tap(base, vec2(0.0, -q.y));',
+  '  vec3 D2 = tap(base, 2.0 * q);',              // far diagonal
+  '  vec3 Dop = tap(base, -q);',
+  // Edge along S1-S2 (cutting this corner) vs edge through E-D.
+  '  float wd1 = cdist(E, Dop) + cdist(D, D2) + 4.0 * cdist(S1, S2);',
+  '  float wd2 = 4.0 * cdist(E, D) + cdist(S1, O2) + cdist(S2, O1);',
+  '  vec3 res = E;',
+  '  if (wd1 < wd2) {',
+  // An edge cuts the corner: take the better-matching edge neighbor.
+  '    vec3 pick = (cdist(E, S1) <= cdist(E, S2)) ? S1 : S2;',
+  '    res = mix(E, pick, 0.5);',
+  '  }',
+  '  gl_FragColor = vec4(res, 1.0);',
+  '}',
+].join('\n');
+
+// DCCI, single-pass adaptation: original pixels copy through; new diagonal
+// pixels are cubic-interpolated along the weaker-gradient diagonal (or a
+// gradient-weighted blend when no direction dominates); new row/column
+// pixels do the same along the axes. Cubic weights are (-1, 9, 9, -1) / 16.
+const FILTER_DCCI_SRC = FILTER_COMMON_SRC + '\n' + [
+  'float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }',
+  'vec3 cubic4(vec3 a, vec3 b, vec3 c, vec3 d) {',
+  '  return clamp((-a + 9.0 * b + 9.0 * c - d) / 16.0, 0.0, 1.0);',
+  '}',
+  'void main() {',
+  '  vec2 opix = floor(vUv * uSrcSize * 2.0);',   // output pixel index
+  '  vec2 par = mod(opix, 2.0);',                 // parity within source cell
+  '  vec2 base = (floor(opix / 2.0) + 0.5) / uSrcSize;',
+  '  if (par.x < 0.5 && par.y < 0.5) {',          // original sample: copy
+  '    gl_FragColor = vec4(texture2D(uTex, base).rgb, 1.0);',
+  '    return;',
+  '  }',
+  '  vec3 res;',
+  '  if (par.x > 0.5 && par.y > 0.5) {',
+  // Diagonal insert between (0,0) and (1,1) of this cell.
+  '    vec3 d45a = tap(base, vec2(-1.0, -1.0));', // down-right diagonal taps
+  '    vec3 d45b = tap(base, vec2( 0.0,  0.0));',
+  '    vec3 d45c = tap(base, vec2( 1.0,  1.0));',
+  '    vec3 d45d = tap(base, vec2( 2.0,  2.0));',
+  '    vec3 d135a = tap(base, vec2( 2.0, -1.0));',// up-right diagonal taps
+  '    vec3 d135b = tap(base, vec2( 1.0,  0.0));',
+  '    vec3 d135c = tap(base, vec2( 0.0,  1.0));',
+  '    vec3 d135d = tap(base, vec2(-1.0,  2.0));',
+  // Gradient strength across each diagonal direction.
+  '    float g45 = abs(lum(d135a) - lum(d135b)) + abs(lum(d135b) - lum(d135c))',
+  '              + abs(lum(d135c) - lum(d135d));',
+  '    float g135 = abs(lum(d45a) - lum(d45b)) + abs(lum(d45b) - lum(d45c))',
+  '               + abs(lum(d45c) - lum(d45d));',
+  '    vec3 p45 = cubic4(d45a, d45b, d45c, d45d);',
+  '    vec3 p135 = cubic4(d135a, d135b, d135c, d135d);',
+  '    if ((1.0 + g45) > 1.15 * (1.0 + g135)) { res = p135; }',
+  '    else if ((1.0 + g135) > 1.15 * (1.0 + g45)) { res = p45; }',
+  '    else {',
+  '      float w45 = 1.0 / (1.0 + g45 * g45 * g45);',
+  '      float w135 = 1.0 / (1.0 + g135 * g135 * g135);',
+  '      res = (w45 * p45 + w135 * p135) / (w45 + w135);',
+  '    }',
+  '  } else {',
+  // Row/column insert: cubic along the axis of the two nearest samples,',
+  // blended against the perpendicular cubic by gradient strength.
+  '    vec2 ax = (par.x > 0.5) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);',
+  '    vec2 pe = vec2(ax.y, ax.x);',
+  '    vec3 a1 = tap(base, -1.0 * ax);',
+  '    vec3 a2 = tap(base,  0.0 * ax);',
+  '    vec3 a3 = tap(base,  1.0 * ax);',
+  '    vec3 a4 = tap(base,  2.0 * ax);',
+  '    vec3 b1 = tap(base, 0.5 * ax - 1.5 * pe);',
+  '    vec3 b2 = tap(base, 0.5 * ax - 0.5 * pe);',
+  '    vec3 b3 = tap(base, 0.5 * ax + 0.5 * pe);',
+  '    vec3 b4 = tap(base, 0.5 * ax + 1.5 * pe);',
+  '    float ga = abs(lum(a2) - lum(a3));',
+  '    float gp = abs(lum(b2) - lum(b3));',
+  '    vec3 pa = cubic4(a1, a2, a3, a4);',
+  '    vec3 pp = 0.5 * (b2 + b3);',
+  '    if ((1.0 + gp) > 1.15 * (1.0 + ga)) { res = pa; }',
+  '    else if ((1.0 + ga) > 1.15 * (1.0 + gp)) { res = pp; }',
+  '    else {',
+  '      float wa = 1.0 / (1.0 + ga * ga * ga);',
+  '      float wp = 1.0 / (1.0 + gp * gp * gp);',
+  '      res = (wa * pa + wp * pp) / (wa + wp);',
+  '    }',
+  '  }',
+  '  gl_FragColor = vec4(res, 1.0);',
+  '}',
+].join('\n');
+
+// ---- WebGL pipeline -------------------------------------------------------
+
+const glFilter = { gl: null, programs: null, tex: null, ok: false };
+
+function gpuFilterReady() {
+  if (glFilter.programs) return glFilter.ok;
+  glFilter.ok = false;
+  glFilter.programs = {};
+  try {
+    const gl = filtercanvas.getContext('webgl', { alpha: false, antialias: false });
+    if (!gl) throw new Error('no webgl');
+    function compile(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        throw new Error('shader: ' + gl.getShaderInfoLog(sh));
+      }
+      return sh;
+    }
+    const vs = compile(gl.VERTEX_SHADER, FILTER_VERTEX_SRC);
+    const sources = { hq2x: FILTER_HQ2X_SRC, xbr: FILTER_XBR_SRC, dcci: FILTER_DCCI_SRC };
+    for (const key in sources) {
+      const p = gl.createProgram();
+      gl.attachShader(p, vs);
+      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, sources[key]));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        throw new Error('link ' + key + ': ' + gl.getProgramInfoLog(p));
+      }
+      glFilter.programs[key] = {
+        p: p,
+        uSrcSize: gl.getUniformLocation(p, 'uSrcSize'),
+        aPos: gl.getAttribLocation(p, 'aPos'),
+      };
+    }
+    // One fullscreen triangle.
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    // Small staging canvas: the game image is drawn into this at its TRUE
+    // logical size (320x200) before upload. This is the heart of the
+    // filter's performance: uploading the full frame buffer cost multiple
+    // megabytes per display refresh and scaled with the buffer size, while
+    // this stays a fixed quarter-megabyte no matter how big the buffer is.
+    glFilter.stage = document.createElement('canvas');
+    glFilter.stageCtx = glFilter.stage.getContext('2d');
+    glFilter.srcW = 0;
+    glFilter.srcH = 0;
+    glFilter.lastTime = 0;
+
+    // The source texture, refreshed from the staging canvas.
+    glFilter.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    // Two ping-pong intermediates for the multi-pass (4x and 8x) modes:
+    // pass N reads one and writes the other, so a texture is never sampled
+    // while it is the render target.
+    glFilter.slots = [];
+    for (let i = 0; i < 2; i++) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+                              gl.TEXTURE_2D, tex, 0);
+      glFilter.slots.push({ tex: tex, fbo: fbo, w: 0, h: 0 });
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    glFilter.gl = gl;
+    glFilter.ok = true;
+  } catch (err) {
+    console.log('GPU filters disabled: ' + err.message);
+  }
+  return glFilter.ok;
+}
+
+// The engine always renders the classic 320x200 and integer-fattens it
+// into the frame buffer (its boot log prints the scaling factor). Filtering
+// the fattened pixels does nearly nothing: the edge-aware rules only work
+// at the true pixel scale. So the shaders sample at the LOGICAL 320x200
+// pixel centers (which recovers the original image exactly, since the
+// fattening is a perfect nearest-neighbour enlargement) and upscale THAT.
+function logicalSourceSize(bw, bh) {
+  const k = Math.max(1, Math.min(Math.floor(bw / 320), Math.floor(bh / 200)));
+  return { w: Math.floor(bw / k), h: Math.floor(bh / k) };
+}
+
+// Render one filter pass: sample srcTex (logical size sw x sh) and draw the
+// filtered result at 2x into the currently bound target.
+function runFilterPass(progName, srcTex, sw, sh, tw, th) {
+  const gl = glFilter.gl;
+  gl.viewport(0, 0, tw, th);
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  const prog = glFilter.programs[progName];
+  gl.useProgram(prog.p);
+  gl.uniform2f(prog.uSrcSize, sw, sh);
+  gl.enableVertexAttribArray(prog.aPos);
+  gl.vertexAttribPointer(prog.aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// Runs forever; costs nothing while no GPU filter is selected.
+function gpuFilterFrame() {
+  requestAnimationFrame(gpuFilterFrame);
+  if (!gameStarted || !activeGpuFilter || !glFilter.ok) return;
+  const gl = glFilter.gl;
+  const bw = canvas.width, bh = canvas.height;
+  if (!bw || !bh) return;
+
+  // Throttle to about 41 updates a second. Doom's game logic runs at a
+  // fixed 35 Hz, so the picture cannot change more often than that;
+  // filtering faster (for example at a 144 Hz display's full rate) is
+  // pure waste.
+  const now = performance.now();
+  if (now - glFilter.lastTime < 24) return;
+  glFilter.lastTime = now;
+
+  const logical = logicalSourceSize(bw, bh);
+  const scale = 1 << activeGpuFilter.passes;   // 2x, 4x, or 8x
+  const ow = logical.w * scale, oh = logical.h * scale;
+  if (filtercanvas.width !== ow || filtercanvas.height !== oh) {
+    filtercanvas.width = ow;
+    filtercanvas.height = oh;
+  }
+
+  // Recover the true 320x200 image on the staging canvas: an integer
+  // nearest-neighbour downscale of a nearest-neighbour enlargement is
+  // exact. Resizing a canvas resets its context state, so smoothing is
+  // re-disabled whenever the size changes.
+  if (glFilter.stage.width !== logical.w || glFilter.stage.height !== logical.h) {
+    glFilter.stage.width = logical.w;
+    glFilter.stage.height = logical.h;
+    glFilter.stageCtx.imageSmoothingEnabled = false;
+  }
+  glFilter.stageCtx.drawImage(canvas, 0, 0, logical.w, logical.h);
+
+  // Upload the small staged image. Storage is allocated once per size and
+  // refreshed in place, which keeps the driver on its fast path.
+  gl.bindTexture(gl.TEXTURE_2D, glFilter.tex);
+  if (glFilter.srcW !== logical.w || glFilter.srcH !== logical.h) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, logical.w, logical.h, 0,
+                  gl.RGBA, gl.UNSIGNED_BYTE, null);
+    glFilter.srcW = logical.w;
+    glFilter.srcH = logical.h;
+  }
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, glFilter.stage);
+
+  // Run the filter once per pass, doubling each time: source texture into
+  // ping-pong intermediates, final pass onto the visible canvas.
+  let srcTex = glFilter.tex;
+  let sw = logical.w, sh = logical.h;
+  for (let i = 0; i < activeGpuFilter.passes; i++) {
+    const tw = sw * 2, th = sh * 2;
+    if (i === activeGpuFilter.passes - 1) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      runFilterPass(activeGpuFilter.prog, srcTex, sw, sh, tw, th);
+    } else {
+      const slot = glFilter.slots[i % 2];
+      if (slot.w !== tw || slot.h !== th) {
+        gl.bindTexture(gl.TEXTURE_2D, slot.tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, tw, th, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        slot.w = tw;
+        slot.h = th;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, slot.fbo);
+      runFilterPass(activeGpuFilter.prog, srcTex, sw, sh, tw, th);
+      srcTex = slot.tex;
+    }
+    sw = tw;
+    sh = th;
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+requestAnimationFrame(gpuFilterFrame);
+
+/* =========================================================================
+ * Start the game
+ * ========================================================================= */
+
+// Guard so the once-a-second FPS sampler is only ever started once, no
+// matter how many times the game is started and quit.
+let fpsTimerStarted = false;
+
+startBtn.addEventListener('click', function () {
+  // Refuse combinations the engine itself would refuse, BEFORE tearing down
+  // the setup screen, so the explanation is readable and nothing half-starts.
+  if (updateSetupWarning()) {
+    return;
+  }
+
+  // Lock in the key bindings the user chose (re-read on every start, so
+  // changes made after a quit take effect).
+  installKeyRemap(buildRemapTable());
+
+  // Copy the setup-screen display choices into the in-game HUD controls.
+  filterHud.value = filterSetup.value;
+  aspectHud.value = aspectSetup.value;
+  sensXHud.value  = sensXSetup.value;
+  sensYHud.value  = sensYSetup.value;
+
+  // Swap from the setup screen to the game stage.
+  document.getElementById('setup').style.display = 'none';
+  stage.style.display = 'flex';
+
+  // Apply the initial filter (default: crisp / original pixels).
+  setFilter(filterHud.value);
+
+  bootEngine();
+});
+
+/* =========================================================================
+ * Booting (and rebooting) the engine
+ * -------------------------------------------------------------------------
+ * Each call creates a COMPLETELY FRESH engine instance; the factory the
+ * build exports supports that. This is what makes "quit to DOS, then Start
+ * again" work: the quit hook below resets the page, and the next Start
+ * boots a new engine while the WAD selections and settings stay as they
+ * were.
+ * ========================================================================= */
+
+// Called from inside the engine (see the engine patch) when the player
+// quits from Doom's own menu. Returns the page to the setup screen.
+window.wasmBuilderOnQuit = function () {
+  gameStarted = false;
+  doomModule = null;
+  engineLog.length = 0;
+  fpsLastTime = 0;
+  fpsLastFrames = 0;
+  fpsLastTics = 0;
+
+  // Release the mouse and leave fullscreen if the game held them.
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(function () {});
+  }
+
+  // Hide the stage overlays and bring the setup screen back.
+  errbox.style.display = 'none';
+  fpsbox.style.display = 'none';
+  mousehint.style.display = 'none';
+  stage.style.display = 'none';
+  document.getElementById('setup').style.display = 'block';
+  console.log('Engine quit; returned to the setup screen.');
+};
+
+function bootEngine() {
+  // Boot the WASM engine. noInitialRun keeps main() from firing until we call
+  // it, so we can write the WAD into the virtual filesystem first. print and
+  // printErr capture the engine's console output (see engineLogPush) while
+  // still mirroring it to the browser console.
+  DoomModule({
+    canvas: canvas,
+    noInitialRun: true,
+    print: function (text) { engineLogPush(text); console.log(text); },
+    printErr: function (text) { engineLogPush(text); console.warn(text); },
+  }).then(function (Module) {
+    // Put the chosen WAD where the engine will look for it, under the name
+    // the engine should identify it by (see chooseIwadName).
+    Module.FS.writeFile('/' + iwadName, wadData);
+
+    // Write any PWADs in next to it and build the engine's command line:
+    // "-file a.wad b.wad" loads them on top of the IWAD, in order.
+    const wadArgs = ['-iwad', '/' + iwadName];
+    const loadedPwads = pwadData.filter(function (p) { return p; });
+    // Manually picked PWADs normally load with -file. With "load as total
+    // conversion" ticked they go through -merge instead, which folds their
+    // sprites and flats into the game properly (see the PWAD hint).
+    const manualAsMerge = document.getElementById('mergePwads').checked;
+    if (loadedPwads.length > 0 && !manualAsMerge) {
+      wadArgs.push('-file');
+      loadedPwads.forEach(function (p) {
+        Module.FS.writeFile('/' + p.name, p.bytes);
+        wadArgs.push('/' + p.name);
+      });
+    }
+
+    // DeHackEd patch files: written under their real names (Chex Quest
+    // looks for chex.deh specifically) and applied in order with -deh.
+    const loadedDehs = dehData.filter(function (p) { return p; });
+    if (loadedDehs.length > 0) {
+      wadArgs.push('-deh');
+      loadedDehs.forEach(function (p) {
+        Module.FS.writeFile('/' + p.name, p.bytes);
+        wadArgs.push('/' + p.name);
+      });
+    }
+
+    // If any PWAD carries a DEHACKED lump, tell the engine to apply those
+    // lumps too (they load last, matching classic ordering).
+    if (loadedPwads.some(function (p) { return p.hasDehacked; })) {
+      wadArgs.push('-dehlump');
+    }
+
+    // Total-conversion WADs: from the free-games buttons, plus any manually
+    // picked PWADs when "load as total conversion" is ticked. -merge folds
+    // their sprites and flats in properly (plain -file cannot).
+    const allMerges = mergeSpecs.concat(manualAsMerge ? loadedPwads : []);
+    if (allMerges.length > 0) {
+      wadArgs.push('-merge');
+      allMerges.forEach(function (p) {
+        Module.FS.writeFile('/' + p.name, p.bytes);
+        wadArgs.push('/' + p.name);
+      });
+    }
+
+    // From here on, intercept and remap keys, and let the mouse handlers
+    // reach the engine's mouse bridge.
+    doomModule = Module;
+    gameStarted = true;
+    updateMouseHint();
+
+    // FPS readout: visible if its HUD checkbox is ticked, sampled once a
+    // second from the engine's counters. The sampler is global and started
+    // only once, even across quit-and-restart cycles.
+    if (fpsToggle.checked) fpsbox.style.display = 'block';
+    if (!fpsTimerStarted) {
+      fpsTimerStarted = true;
+      setInterval(updateFps, 1000);
+    }
+
+    // Size the canvas once before we start (the MutationObserver will refine it
+    // as soon as the engine sets its real buffer size during callMain).
+    applyScaling();
+    canvas.focus();
+
+    // Start the engine. Emscripten's main loop "unwinds" the C stack by
+    // throwing a sentinel value; that is expected, so we swallow it and log
+    // anything unexpected.
+    try {
+      Module.callMain(wadArgs);
+    } catch (err) {
+      const isUnwind = (err === 'unwind') || (err && err.message === 'unwind');
+      if (!isUnwind) showFatalError(err);
+    }
+
+    // Watchdog: an engine error (I_Error) exits CLEANLY, without throwing
+    // anything this page could catch, which would leave a silent black
+    // screen. If the engine has not rendered a single frame shortly after
+    // starting, surface its own output so the reason is readable.
+    setTimeout(function () {
+      if (gameStarted
+          && errbox.style.display !== 'block'
+          && doomModule
+          && doomModule._DG_EM_GetFrameCount() === 0) {
+        showFatalError(new Error('The engine stopped before rendering its first frame.'));
+      }
+    }, 3000);
+
+    // Now that the engine has set the real buffer size, fit to the window.
+    applyScaling();
+    canvas.focus();
+  }).catch(showFatalError);   // any failure while booting the engine lands here
+}
+</script>
+</body>
+</html>

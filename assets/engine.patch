@@ -1,0 +1,583 @@
+diff --git a/doomgeneric/d_loop.c b/doomgeneric/d_loop.c
+index 1939dbd..0f3125c 100644
+--- a/doomgeneric/d_loop.c
++++ b/doomgeneric/d_loop.c
+@@ -762,6 +762,13 @@ void TryRunTics (void)
+     if (counts < 1)
+ 	counts = 1;
+ 
++    // [WASM-builder] Never try to catch up by more than a few tics in
++    // one frame. Unbounded catch-up freezes the browser tab on heavy
++    // maps; capped catch-up is slow motion, like DOS Doom on a slow
++    // machine. Single player only.
++    if (!net_client_connected && counts > 4)
++	counts = 4;
++
+     // wait for new tics if needed
+ 
+     while (!PlayersInGame() || lowtic < gametic/ticdup + counts)
+diff --git a/doomgeneric/d_main.c b/doomgeneric/d_main.c
+index 9012e5f..cd8efc6 100644
+--- a/doomgeneric/d_main.c
++++ b/doomgeneric/d_main.c
+@@ -125,7 +125,11 @@ boolean         main_loop_started = false;
+ char		wadfile[1024];		// primary wad file
+ char		mapdir[1024];           // directory of development maps
+ 
+-int             show_endoom = 1;
++// [WASM-builder] ENDOOM (the DOS text farewell screen) is stubbed on
++// this platform, and its code path exited early during quit, cutting
++// the quit sequence short before the page could be notified. Default
++// off; the config option remains but does nothing useful in a browser.
++int             show_endoom = 0;
+ 
+ 
+ void D_ConnectNetGame(void);
+@@ -1085,7 +1089,7 @@ static void D_Endoom(void)
+ 	exit(0);
+ }
+ 
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+ // Load dehacked patches needed for certain IWADs.
+ static void LoadIwadDeh(void)
+ {
+@@ -1157,6 +1161,18 @@ static void LoadIwadDeh(void)
+ }
+ #endif
+ 
++// [WASM-builder] Exit functions must be exactly void(*)(void).
++// G_CheckDemoStatus returns a boolean, and vanilla registered it with a
++// cast, which x86 tolerates but WebAssembly rejects with a hard trap
++// ("function signature mismatch") the moment an exit function runs,
++// turning every engine error into an opaque crash. This tiny wrapper
++// has the right signature and simply ignores the return value, exactly
++// like the original cast pretended to.
++static void G_CheckDemoStatusAtExit(void)
++{
++    G_CheckDemoStatus();
++}
++
+ //
+ // D_DoomMain
+ //
+@@ -1165,7 +1181,7 @@ void D_DoomMain (void)
+     int p;
+     char file[256];
+     char demolumpname[9];
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+     int numiwadlumps;
+ #endif
+ 
+@@ -1377,7 +1393,7 @@ void D_DoomMain (void)
+ 
+     DEH_printf("W_Init: Init WADfiles.\n");
+     D_AddFile(iwadfile);
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+     numiwadlumps = numlumps;
+ #endif
+ 
+@@ -1388,7 +1404,7 @@ void D_DoomMain (void)
+     D_IdentifyVersion();
+     InitGameVersion();
+ 
+-#if ORIGCODE
++#if 1   // [WASM-builder] was '#if ORIGCODE': DeHackEd support restored
+     //!
+     // @category mod
+     //
+@@ -1510,7 +1526,10 @@ void D_DoomMain (void)
+         printf("Playing demo %s.\n", file);
+     }
+ 
+-    I_AtExit((atexit_func_t) G_CheckDemoStatus, true);
++    // [WASM-builder] Registered through a signature-correct wrapper; see
++    // G_CheckDemoStatusAtExit above D_DoomMain for why the original
++    // cast trapped on WebAssembly.
++    I_AtExit(G_CheckDemoStatusAtExit, true);
+ 
+     // Generate the WAD hash table.  Speed things up a bit.
+     W_GenerateHashTable();
+diff --git a/doomgeneric/doomfeatures.h b/doomgeneric/doomfeatures.h
+index dff6936..2a31f6f 100644
+--- a/doomgeneric/doomfeatures.h
++++ b/doomgeneric/doomfeatures.h
+@@ -21,11 +21,15 @@
+ 
+ // Enables wad merging (the '-merge' command line parameter)
+ 
+-#undef FEATURE_WAD_MERGE
++// [WASM-builder] WAD merging (-merge) enabled (w_merge.c restored by
++// install.sh). This is how total conversions load with their sprites
++// and flats intact on a vanilla engine.
++#define FEATURE_WAD_MERGE 1
+ 
+ // Enables dehacked support ('-deh')
+ 
+-#undef FEATURE_DEHACKED
++// [WASM-builder] DeHackEd support enabled (parser restored by install.sh).
++#define FEATURE_DEHACKED 1
+ 
+ // Enables multiplayer support (network games)
+ 
+diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
+index 7076dd2..5eff33a 100644
+--- a/doomgeneric/doomgeneric_emscripten.c
++++ b/doomgeneric/doomgeneric_emscripten.c
+@@ -3,6 +3,8 @@
+ #include "doomkeys.h"
+ #include "m_argv.h"
+ #include "doomgeneric.h"
++#include "d_event.h"   // [WASM-builder] event_t / D_PostEvent for mouse input
++#include "i_system.h"  // [WASM-builder] I_AtExit for the quit notifier
+ 
+ #include <stdio.h>
+ #include <unistd.h>
+@@ -96,6 +98,15 @@ static unsigned char convertToDoomKey(unsigned int key)
+     case SDLK_MINUS:
+       key = KEY_MINUS;
+       break;
++    // [WASM-builder] Strafing: Doom has dedicated strafe key codes, bound to
++    // , and . on the classic keyboard layout. The web page remaps physical
++    // A and D onto Comma and Period so A/D strafe by default.
++    case SDLK_COMMA:
++      key = KEY_STRAFE_L;
++      break;
++    case SDLK_PERIOD:
++      key = KEY_STRAFE_R;
++      break;
+     default:
+       key = tolower(key);
+       break;
+@@ -139,6 +150,109 @@ static void handleKeyInput()
+ }
+ 
+ 
++// ---------------------------------------------------------------------------
++// [WASM-builder] Mouse look bridge.
++//
++// The web page owns the pointer (browser pointer lock) and calls the two
++// exported functions below from JavaScript:
++//   DG_EM_MouseMove(dx, dy)     relative motion since the last call, in
++//                               browser pixels (positive dx = right,
++//                               positive dy = down, as browsers report it)
++//   DG_EM_MouseButtons(bits)    currently held buttons, already translated
++//                               to Doom's bitfield (bit 0 = fire)
++//
++// Motion accumulates here and is flushed as ONE ev_mouse event per rendered
++// frame, mirroring how the engine's own SDL backends batch mouse input.
++// Doom's ev_mouse convention: data2 = X (positive turns right), data3 = Y
++// (positive means up), so the Y axis is negated when the event is built.
++// ---------------------------------------------------------------------------
++
++static int s_MouseDeltaX = 0;
++static int s_MouseDeltaY = 0;
++static int s_MouseButtons = 0;
++static int s_MouseDirty = 0;
++
++EMSCRIPTEN_KEEPALIVE void DG_EM_MouseMove(int dx, int dy)
++{
++  s_MouseDeltaX += dx;
++  s_MouseDeltaY += dy;
++  s_MouseDirty = 1;
++}
++
++EMSCRIPTEN_KEEPALIVE void DG_EM_MouseButtons(int buttons)
++{
++  s_MouseButtons = buttons;
++  s_MouseDirty = 1;
++}
++
++static void flushMouseEvents(void)
++{
++  event_t ev;
++
++  if (!s_MouseDirty)
++  {
++    return;
++  }
++
++  ev.type = ev_mouse;
++  ev.data1 = s_MouseButtons;    // held buttons (bit 0 = fire)
++  ev.data2 = s_MouseDeltaX;     // positive = turn right
++  ev.data3 = -s_MouseDeltaY;    // Doom wants positive = up
++  ev.data4 = 0;
++
++  D_PostEvent(&ev);
++
++  s_MouseDeltaX = 0;
++  s_MouseDeltaY = 0;
++  s_MouseDirty = 0;
++}
++
++// ---------------------------------------------------------------------------
++// [WASM-builder] Rendered-frame counter.
++// DG_DrawFrame increments this once per rendered frame; the page reads it
++// through the exported getter (about once a second) to show an FPS counter.
++// A plain int is fine here: the page's JavaScript and the game run on the
++// same thread, so there is no race.
++// ---------------------------------------------------------------------------
++
++static int s_FrameCount = 0;
++
++EMSCRIPTEN_KEEPALIVE int DG_EM_GetFrameCount(void)
++{
++  return s_FrameCount;
++}
++
++// [WASM-builder] The engine's game-logic clock (35 per second at full
++// speed). The page shows tics per second beside FPS: rendering speed and
++// game-logic speed are different things, and telling them apart is the
++// whole point of a performance readout on heavy maps.
++extern int gametic;
++
++EMSCRIPTEN_KEEPALIVE int DG_EM_GetGameTic(void)
++{
++  return gametic;
++}
++
++// [WASM-builder] Runs when the player quits from Doom's own menu (the
++// engine calls its registered exit functions before stopping). EM_ASM
++// executes a snippet of JavaScript from C: here it calls a hook the page
++// installs, so the page can put its setup screen back. Afterwards the
++// browser main loop is cancelled, because this platform's I_Quit RETURNS
++// instead of exiting the process; without the cancel, a quit game would
++// keep ticking invisibly behind the setup screen.
++static int s_QuitHookRegistered = 0;
++
++static void NotifyPageOfQuit(void)
++{
++  EM_ASM({
++    if (typeof window !== 'undefined' && window.wasmBuilderOnQuit) {
++      window.wasmBuilderOnQuit();
++    }
++  });
++
++  emscripten_cancel_main_loop();
++}
++
+ void DG_Init()
+ {
+   window = SDL_CreateWindow("DOOM",
+@@ -167,7 +281,17 @@ void DG_DrawFrame()
+   SDL_RenderCopy(renderer, texture, NULL, NULL);
+   SDL_RenderPresent(renderer);
+ 
++  if (!s_QuitHookRegistered)
++  {
++    // [WASM-builder] Registered here (first frame) rather than at init so
++    // it runs FIRST among the exit functions on quit; see NotifyPageOfQuit.
++    s_QuitHookRegistered = 1;
++    I_AtExit(NotifyPageOfQuit, false);
++  }
++
++  s_FrameCount++;       // [WASM-builder] one more rendered frame (FPS counter)
+   handleKeyInput();
++  flushMouseEvents();   // [WASM-builder] deliver this frame's mouse input
+ }
+ 
+ void DG_SleepMs(uint32_t ms)
+diff --git a/doomgeneric/g_game.c b/doomgeneric/g_game.c
+index 9954d78..8a7fdae 100644
+--- a/doomgeneric/g_game.c
++++ b/doomgeneric/g_game.c
+@@ -73,7 +73,10 @@
+ #include "g_game.h"
+ 
+ 
+-#define SAVEGAMESIZE	0x2c000
++// [WASM-builder limits] Vanilla: 0x2c000 (180224). Saves here are stream
++// based, but the vanilla size limit is still emulated with an I_Error
++// ("Savegame buffer overrun") past this size. x16, Doom-plus style.
++#define SAVEGAMESIZE	(0x2c000 * 16)
+ 
+ void	G_ReadDemoTiccmd (ticcmd_t* cmd); 
+ void	G_WriteDemoTiccmd (ticcmd_t* cmd); 
+@@ -205,6 +208,12 @@ static boolean *mousebuttons = &mousearray[1];  // allow [-1]
+ int             mousex;
+ int             mousey;         
+ 
++// [WASM-builder mouse look] How far the view is pitched up or down, in
++// y-shear pixels at a 200-line reference screen. Positive looks up. The
++// renderer scales this to the real view height (see r_main.c).
++int             lookdir;
++#define MAXLOOKDIR 100
++
+ static int      dclicktime;
+ static boolean  dclickstate;
+ static int      dclicks; 
+@@ -534,7 +543,14 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
+         } 
+     }
+ 
+-    forward += mousey; 
++    // [WASM-builder mouse look] Vertical mouse motion pitches the view
++    // (see r_main.c). Classic Doom walked you forward and back instead,
++    // which nobody expects once real mouse look exists.
++    lookdir += mousey / 2;
++    if (lookdir > MAXLOOKDIR)
++	lookdir = MAXLOOKDIR;
++    else if (lookdir < -MAXLOOKDIR)
++	lookdir = -MAXLOOKDIR;
+ 
+     if (strafe) 
+ 	side += mousex*2; 
+@@ -662,6 +678,7 @@ void G_DoLoadLevel (void)
+     memset (gamekeydown, 0, sizeof(gamekeydown));
+     joyxmove = joyymove = joystrafemove = 0;
+     mousex = mousey = 0;
++    lookdir = 0;   // [WASM-builder mouse look] start each level looking level
+     sendpause = sendsave = paused = false;
+     memset(mousearray, 0, sizeof(mousearray));
+     memset(joyarray, 0, sizeof(joyarray));
+@@ -827,8 +844,11 @@ boolean G_Responder (event_t* ev)
+ 		 
+       case ev_mouse: 
+         SetMouseButtons(ev->data1);
+-	mousex = ev->data2*(mouseSensitivity+5)/10; 
+-	mousey = ev->data3*(mouseSensitivity+5)/10; 
++	// [WASM-builder mouse look] += instead of =, so motion from several
++	// mouse events between game tics adds up instead of being dropped.
++	// G_BuildTiccmd zeroes these after it consumes them.
++	mousex += ev->data2*(mouseSensitivity+5)/10;
++	mousey += ev->data3*(mouseSensitivity+5)/10;
+ 	return true;    // eat events 
+  
+       case ev_joystick: 
+diff --git a/doomgeneric/i_system.c b/doomgeneric/i_system.c
+index 53ab2c9..4bfd843 100644
+--- a/doomgeneric/i_system.c
++++ b/doomgeneric/i_system.c
+@@ -55,7 +55,10 @@
+ #include <CoreFoundation/CFUserNotification.h>
+ #endif
+ 
+-#define DEFAULT_RAM 6 /* MiB */
++// [WASM-builder] Vanilla: 6 MiB, sized for 1993. Slaughter-grade maps
++// need far more zone memory (NUTS.wad alone spawns 10000+ objects).
++// Memory is cheap in this build; -mb still overrides.
++#define DEFAULT_RAM 64 /* MiB */
+ #define MIN_RAM     6  /* MiB */
+ 
+ 
+diff --git a/doomgeneric/p_local.h b/doomgeneric/p_local.h
+index 95fa405..9830b00 100644
+--- a/doomgeneric/p_local.h
++++ b/doomgeneric/p_local.h
+@@ -152,7 +152,10 @@ typedef struct
+ // Extended MAXINTERCEPTS, to allow for intercepts overrun emulation.
+ 
+ #define MAXINTERCEPTS_ORIGINAL 128
+-#define MAXINTERCEPTS          (MAXINTERCEPTS_ORIGINAL + 61)
++// [WASM-builder limits] Chocolate: ORIGINAL + 61 (the 61 exists for the
++// intercepts-overrun emulation, which is untouched). Extra headroom so
++// BFG shots through slaughter hordes cannot write past the array.
++#define MAXINTERCEPTS          (MAXINTERCEPTS_ORIGINAL + 61 + 2048)
+ 
+ extern intercept_t	intercepts[MAXINTERCEPTS];
+ extern intercept_t*	intercept_p;
+@@ -216,7 +219,11 @@ extern	line_t*		ceilingline;
+ // We keep the original limit, to detect what variables in memory were
+ // overwritten (see SpechitOverrun())
+ 
+-#define MAXSPECIALCROSS 		20
++// [WASM-builder limits] Chocolate: 20. The write into spechit[] has no
++// bounds check, so exceeding this corrupts memory. The vanilla overrun
++// EMULATION (SpechitOverrun, keyed to MAXSPECIALCROSS_ORIGINAL) is
++// untouched; only the real storage grows.
++#define MAXSPECIALCROSS 		512
+ #define MAXSPECIALCROSS_ORIGINAL	8
+ 
+ extern	line_t*	spechit[MAXSPECIALCROSS];
+diff --git a/doomgeneric/p_spec.c b/doomgeneric/p_spec.c
+index 17446b5..c96d047 100644
+--- a/doomgeneric/p_spec.c
++++ b/doomgeneric/p_spec.c
+@@ -133,7 +133,9 @@ anim_t*		lastanim;
+ //
+ //      Animating line specials
+ //
+-#define MAXLINEANIMS            64
++// [WASM-builder limits] Vanilla: 64. Chocolate caps instead of crashing;
++// raising the cap lets big maps animate all their scrolling walls. 16x.
++#define MAXLINEANIMS            1024
+ 
+ extern  short	numlinespecials;
+ extern  line_t*	linespeciallist[MAXLINEANIMS];
+diff --git a/doomgeneric/p_spec.h b/doomgeneric/p_spec.h
+index a1343bf..7af0669 100644
+--- a/doomgeneric/p_spec.h
++++ b/doomgeneric/p_spec.h
+@@ -238,7 +238,9 @@ typedef struct
+ #define MAXSWITCHES		50
+ 
+  // 4 players, 4 buttons each at once, max.
+-#define MAXBUTTONS		16
++// [WASM-builder limits] Vanilla: 16. Overflow is I_Error
++// "P_StartButton: no button slots left!". 16x.
++#define MAXBUTTONS		256
+ 
+  // 1 second, in ticks. 
+ #define BUTTONTIME      35             
+@@ -300,7 +302,9 @@ typedef struct
+ 
+ #define PLATWAIT		3
+ #define PLATSPEED		FRACUNIT
+-#define MAXPLATS		30
++// [WASM-builder limits] Vanilla: 30. Overflow is I_Error
++// "P_AddActivePlat: no more plats!". 512 covers slaughter maps.
++#define MAXPLATS		512
+ 
+ 
+ extern plat_t*	activeplats[MAXPLATS];
+@@ -512,7 +516,9 @@ typedef struct
+ 
+ #define CEILSPEED		FRACUNIT
+ #define CEILWAIT		150
+-#define MAXCEILINGS		30
++// [WASM-builder limits] Vanilla: 30. Overflow silently drops ceilings
++// (they become impossible to stop). 512 covers slaughter maps.
++#define MAXCEILINGS		512
+ 
+ extern ceiling_t*	activeceilings[MAXCEILINGS];
+ 
+diff --git a/doomgeneric/r_defs.h b/doomgeneric/r_defs.h
+index a64ac84..2d4b8f7 100644
+--- a/doomgeneric/r_defs.h
++++ b/doomgeneric/r_defs.h
+@@ -48,7 +48,9 @@
+ #define SIL_TOP			2
+ #define SIL_BOTH		3
+ 
+-#define MAXDRAWSEGS		256
++// [WASM-builder limits] Vanilla: 256. Overflow does not crash, it makes
++// distant walls silently vanish in complex scenes. 16x.
++#define MAXDRAWSEGS		4096
+ 
+ 
+ 
+diff --git a/doomgeneric/r_main.c b/doomgeneric/r_main.c
+index 22278fe..4d09815 100644
+--- a/doomgeneric/r_main.c
++++ b/doomgeneric/r_main.c
+@@ -58,6 +58,13 @@ int			centery;
+ 
+ fixed_t			centerxfrac;
+ fixed_t			centeryfrac;
++
++// [WASM-builder mouse look] lookdir lives in g_game.c: pitch in y-shear
++// pixels at a 200-line reference screen, positive = up. r_shearpixels is
++// the shift applied at the current view size, shared with r_things.c so
++// the weapon sprite can be held steady on screen.
++extern int		lookdir;
++int			r_shearpixels;
+ fixed_t			projection;
+ 
+ // just for profiling purposes
+@@ -851,6 +858,43 @@ void R_SetupFrame (player_t* player)
+     else
+ 	fixedcolormap = 0;
+ 		
++    // [WASM-builder mouse look] Vertical look via y-shearing, the same
++    // trick Heretic and Hexen used: slide the projection horizon
++    // (centery) up or down the screen. The yslope table used by floor
++    // and ceiling rendering depends on centery, so recompute it too.
++    // Only runs when the pitch or the view size actually changed.
++    {
++	static int	cachedshear = 0;
++	static int	cachedviewheight = 0;
++	int		shear;
++	fixed_t		dy;
++
++	// Scale from the 200-line reference to the real view height, then
++	// clamp so the horizon always stays on screen with a margin.
++	shear = lookdir * viewheight / 200;
++	if (shear > viewheight/2 - 8)
++	    shear = viewheight/2 - 8;
++	else if (shear < -(viewheight/2 - 8))
++	    shear = -(viewheight/2 - 8);
++
++	if (shear != cachedshear
++	    || viewheight != cachedviewheight
++	    || centery != viewheight/2 + shear)
++	{
++	    centery = viewheight/2 + shear;
++	    centeryfrac = centery<<FRACBITS;
++	    for (i=0 ; i<viewheight ; i++)
++	    {
++		dy = ((i-centery)<<FRACBITS)+FRACUNIT/2;
++		dy = abs(dy);
++		yslope[i] = FixedDiv ( (viewwidth<<detailshift)/2*FRACUNIT, dy);
++	    }
++	    cachedshear = shear;
++	    cachedviewheight = viewheight;
++	}
++	r_shearpixels = shear;
++    }
++
+     framecount++;
+     validcount++;
+ }
+diff --git a/doomgeneric/r_plane.c b/doomgeneric/r_plane.c
+index ea1611c..f02763b 100644
+--- a/doomgeneric/r_plane.c
++++ b/doomgeneric/r_plane.c
+@@ -42,14 +42,18 @@ planefunction_t		ceilingfunc;
+ //
+ 
+ // Here comes the obnoxious "visplane".
+-#define MAXVISPLANES	128
++// [WASM-builder limits] Vanilla: 128. The classic slaughter-map killer:
++// I_Error "R_FindPlane: no more visplanes". 32x.
++#define MAXVISPLANES	4096
+ visplane_t		visplanes[MAXVISPLANES];
+ visplane_t*		lastvisplane;
+ visplane_t*		floorplane;
+ visplane_t*		ceilingplane;
+ 
+ // ?
+-#define MAXOPENINGS	SCREENWIDTH*64
++// [WASM-builder limits] Vanilla: SCREENWIDTH*64. Complex scenes need
++// more clip-window openings; overflow here corrupts memory. x8.
++#define MAXOPENINGS	SCREENWIDTH*64*8
+ short			openings[MAXOPENINGS];
+ short*			lastopening;
+ 
+diff --git a/doomgeneric/r_things.c b/doomgeneric/r_things.c
+index 74e7369..c2cfed1 100644
+--- a/doomgeneric/r_things.c
++++ b/doomgeneric/r_things.c
+@@ -685,6 +685,15 @@ void R_DrawPSprite (pspdef_t* psp)
+     vis = &avis;
+     vis->mobjflags = 0;
+     vis->texturemid = (BASEYCENTER<<FRACBITS)+FRACUNIT/2-(psp->sy-spritetopoffset[lump]);
++
++    // [WASM-builder mouse look] The view shear moves centery, which would
++    // drag the weapon sprite up and down the screen with it. Shift the
++    // sprite the opposite way so it stays put (weapon bob still applies).
++    {
++	extern int r_shearpixels;
++	vis->texturemid += FixedDiv(r_shearpixels<<FRACBITS,
++				    pspritescale<<detailshift);
++    }
+     vis->x1 = x1 < 0 ? 0 : x1;
+     vis->x2 = x2 >= viewwidth ? viewwidth-1 : x2;	
+     vis->scale = pspritescale<<detailshift;
+diff --git a/doomgeneric/r_things.h b/doomgeneric/r_things.h
+index 256a5eb..9a1c951 100644
+--- a/doomgeneric/r_things.h
++++ b/doomgeneric/r_things.h
+@@ -22,7 +22,10 @@
+ 
+ 
+ 
+-#define MAXVISSPRITES  	128
++// [WASM-builder limits] Vanilla: 128. Overflow does not crash (a dummy
++// overflow sprite is returned) but monsters beyond the limit are not
++// drawn, which defeats slaughter-map testing. 16x.
++#define MAXVISSPRITES  	2048
+ 
+ extern vissprite_t	vissprites[MAXVISSPRITES];
+ extern vissprite_t*	vissprite_p;

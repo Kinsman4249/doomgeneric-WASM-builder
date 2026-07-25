@@ -888,6 +888,19 @@ the crash and the game now runs.
     what was removed, and keeps the source repo and the packaged
     tarball unless each is separately confirmed.
 
+### Code organization (round twenty-four, v2.1.1)
+
+68. The monolithic 3388-line `install.sh` has been split into modular
+    step scripts, each under 200 lines, with a thin orchestrator at the
+    top. The twelve numbered files (`01-packages.sh` through
+    `12-cleanup.sh`) live in `scripts/steps/`, and shared config and
+    helper functions are in `scripts/lib/common.sh`. Large generated files
+    that were embedded as bash heredocs (the engine patch, the Makefile
+    template, index.html, and the freeware pack downloader) are now real,
+    syntax-highlightable files under `assets/`. Behavior is identical;
+    this improves code readability and makes future patches easier to
+    reason about and maintain.
+
 ## Deploying into an existing web server
 
 If this machine already runs Apache or Nginx, the installer can place the
