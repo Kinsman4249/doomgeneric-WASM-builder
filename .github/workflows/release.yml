@@ -1,7 +1,13 @@
-# Builds a source archive on a tag push and attaches it to a GitHub Release.
-# This project has no compile step (install.sh does its own build against
-# emsdk at run time), so the release is just a clean archive of the repo at
-# the tagged commit.
+# Builds the game once (a plain Linux runner is enough: install.sh's own
+# build has no OS-specific output, it's just index.html + doomgeneric.js),
+# then wraps that same payload three ways: a self-extracting Linux
+# installer (makeself), a Windows installer (NSIS) with Desktop/Start Menu
+# shortcuts, and a macOS .app in a drag-to-Applications .dmg. All four
+# files plus a plain source archive are attached to one GitHub Release.
+#
+# assets/icon.png (if present) is picked up automatically and converted to
+# .ico / .icns for the platforms that want it; without it, everything
+# still builds, shortcuts just use the target file's default icon.
 #
 # CUTTING A RELEASE
 # ------------------
@@ -11,7 +17,8 @@
 #     git push --tags
 #
 # A new GitHub Release appears under the "Releases" tab once the workflow
-# finishes. See: https://semver.org
+# finishes (several minutes: it builds the engine, then packages it three
+# ways). See: https://semver.org
 #
 # RUNNING MANUALLY
 # -----------------
@@ -34,8 +41,165 @@ permissions:
   contents: write
 
 jobs:
+  # =========================================================================
+  # Build the engine once. index.html and doomgeneric.js are identical
+  # regardless of which OS ends up running them, so this only needs to
+  # happen on one runner.
+  # =========================================================================
+  build-payload:
+    name: Build engine
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Run install.sh (engine only, no prompts)
+        env:
+          FREEWARE: "0"
+          WEBEXPORT: "0"
+          SITE: "0"
+        run: ./install.sh
+
+      - name: Stage payload
+        run: |
+          mkdir -p payload
+          cp "$HOME/doomgeneric/doomgeneric/index.html" payload/
+          cp "$HOME/doomgeneric/doomgeneric/doomgeneric.js" payload/
+
+      - name: Upload payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-payload
+          path: payload/
+          retention-days: 1
+
+  # =========================================================================
+  # Linux: self-extracting installer via makeself. Installs to
+  # ~/.local/share and adds a .desktop entry (app menu + Desktop icon).
+  # =========================================================================
+  package-linux:
+    name: Package (Linux)
+    needs: build-payload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download payload
+        uses: actions/download-artifact@v4
+        with:
+          name: web-payload
+          path: payload
+
+      - name: Install makeself
+        run: sudo apt-get update && sudo apt-get install -y makeself
+
+      - name: Build installer
+        run: |
+          chmod +x installers/linux/build.sh
+          VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          installers/linux/build.sh "$VERSION"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-linux
+          path: dist/*.run
+          retention-days: 1
+
+  # =========================================================================
+  # Windows: NSIS installer with Desktop and Start Menu shortcuts pointing
+  # straight at index.html (opens with the default browser).
+  # =========================================================================
+  package-windows:
+    name: Package (Windows)
+    needs: build-payload
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download payload
+        uses: actions/download-artifact@v4
+        with:
+          name: web-payload
+          path: payload
+
+      - name: Install NSIS
+        run: choco install -y nsis
+
+      - name: Build icon (best effort)
+        shell: pwsh
+        run: installers/windows/make-icon.ps1
+
+      - name: Build installer
+        shell: cmd
+        run: '"C:\Program Files (x86)\NSIS\makensis.exe" installers\windows\installer.nsi'
+
+      - name: Rename installer
+        shell: bash
+        run: |
+          mkdir -p dist
+          VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          # makensis resolves OutFile relative to the .nsi script's own
+          # directory (installers/windows/), not the invocation cwd.
+          mv installers/windows/doomgeneric-WASM-windows.exe \
+            "dist/doomgeneric-WASM-${VERSION}-windows.exe"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: dist/*.exe
+          retention-days: 1
+
+  # =========================================================================
+  # macOS: a minimal .app bundle (a launcher script that opens index.html
+  # in the default browser, no compiling) wrapped in a drag-to-Applications
+  # .dmg. Unsigned: first launch needs right-click > Open (no Apple
+  # Developer account / notarization here).
+  # =========================================================================
+  package-macos:
+    name: Package (macOS)
+    needs: build-payload
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download payload
+        uses: actions/download-artifact@v4
+        with:
+          name: web-payload
+          path: payload
+
+      - name: Build .dmg
+        run: |
+          chmod +x installers/macos/build-dmg.sh
+          VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          installers/macos/build-dmg.sh "$VERSION"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-macos
+          path: dist/*.dmg
+          retention-days: 1
+
+  # =========================================================================
+  # Collect everything and publish one Release.
+  # =========================================================================
   release:
     name: Create GitHub Release
+    needs: [package-linux, package-windows, package-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -54,6 +218,13 @@ jobs:
           # git archive produces clean source archives that match the exact tag.
           git archive --format=tar.gz --prefix="${name}/" -o "dist/${name}.tar.gz" HEAD
           git archive --format=zip   --prefix="${name}/" -o "dist/${name}.zip"    HEAD
+
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
