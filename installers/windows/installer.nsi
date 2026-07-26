@@ -19,9 +19,9 @@ SilentInstall normal
 
 Section "Install"
   SetOutPath "$INSTDIR"
-  File "../../payload/index.html"
-  File "../../payload/doomgeneric.js"
-  File /nonfatal "../../payload/icon.ico"
+  File "..\..\payload\index.html"
+  File "..\..\payload\doomgeneric.js"
+  File /nonfatal "..\..\payload\icon.ico"
 
   ; $0 holds the icon path for the shortcuts below; empty means "use the
   ; target file's own icon" (CreateShortcut treats "" that way).

@@ -134,13 +134,20 @@ jobs:
       - name: Install NSIS
         run: choco install -y nsis
 
+      - name: Verify payload
+        shell: bash
+        run: |
+          echo "=== Checking payload directory ==="
+          ls -la payload/
+
       - name: Build icon (best effort)
         shell: pwsh
         run: installers/windows/make-icon.ps1
 
       - name: Build installer
+        working-directory: installers/windows
         shell: cmd
-        run: '"C:\Program Files (x86)\NSIS\makensis.exe" installers\windows\installer.nsi'
+        run: '"C:\Program Files (x86)\NSIS\makensis.exe" /V4 installer.nsi'
 
       - name: Rename installer
         shell: bash
