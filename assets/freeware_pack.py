@@ -2,14 +2,25 @@
 # necessary, sanity-checks WAD magics, and writes freeware/<key>.js files
 # the page can load with a script tag. Failures are warnings, not fatal:
 # the page explains per title if its file is missing.
-import base64, io, json, os, subprocess, sys, zipfile
+#
+# Usage: freeware_pack.py <outdir> [key ...]
+# With no keys given, every title in PLAN is fetched (the install.sh "get
+# everything" path). With keys given, only those PLAN entries are fetched -
+# used by the pre-built installers' per-title checkboxes, which pass the
+# full key group for whichever titles the user checked (e.g. "harmony"
+# expands to freedoom2, harmonyc, harmony_deh).
+import base64, gzip, io, json, os, subprocess, sys, zipfile
 
 outdir = sys.argv[1]
+key_filter = set(sys.argv[2:]) or None
 
 # (js key, download url, member inside the zip or None for a raw file,
 #  filename the page should present to the engine)
 PLAN = [
-    ("doom1",       "https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad",
+    # v1.8 shareware (idgames' v1.9 archive is a DOS self-extracting DEICE
+    # package, not a plain zip, so it can't be pulled apart here). Same
+    # nine Episode 1 levels as v1.9 shareware; only bugfixes differ.
+    ("doom1",       "https://www.gamers.org/pub/idgames/idstuff/doom/doom-1.8.wad.gz",
                     None,            "doom1.wad"),
     ("freedoom1",   "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip",
                     "freedoom-0.13.0/freedoom1.wad", "freedoom1.wad"),
@@ -64,6 +75,8 @@ def fetch(url):
 
 failed = []
 for key, url, member, engine_name in PLAN:
+    if key_filter is not None and key not in key_filter:
+        continue
     is_raw = engine_name.endswith(".txt") or engine_name.endswith(".zip")
     outpath = os.path.join(outdir, engine_name if is_raw else key + ".js")
     if os.path.exists(outpath):
@@ -71,6 +84,8 @@ for key, url, member, engine_name in PLAN:
         continue
     try:
         raw = fetch(url)
+        if url.endswith(".gz"):
+            raw = gzip.decompress(raw)
         if member is not None:
             raw = zipfile.ZipFile(io.BytesIO(raw)).read(member)
         if is_raw:

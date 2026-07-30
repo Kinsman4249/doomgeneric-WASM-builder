@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.3.0 (2026-07-29)
+
+All three prebuilt installers (Linux, Windows, macOS) can now download and install optional freeware WADs at setup time. The Linux and macOS installers prompt the user yes/no per title; the Windows installer has a Components page with checkboxes. Titles available are Doom Shareware, Freedoom Phase 1 and 2, HACX, Chex Quest Trilogy, Harmony, WolfenDoom: First Encounter, and STRAIN, all fetched from their original sources (no bundled WAD files). Users can skip all downloads and use the in-browser picker instead to supply their own WAD.
+
+The freeware download mechanism is shared across all three installers: assets/freeware_pack.py (Python) handles Linux and macOS downloads, and a new installers/windows/freeware-pack.ps1 (PowerShell) port handles Windows, both using the same PLAN of sources and filtering by title group as requested by the installer. The download happens at install time after the core is installed, so network failures during WAD fetches do not block the game itself.
+
+The Windows installer workflow now uses NSIS 3's MUI2 wizard UI with a Components page instead of silent installation, and the NSIS script receives the version number from the CI job via the /DVERSION flag. The Windows installer also registers itself in Control Panel > Programs and Features with an uninstall entry. macOS gains a "Download Extra WADs.command" shell script in the .dmg alongside the app for optional post-install WAD downloads. Linux's uninstall.sh script now removes downloaded WAD files as part of cleanup.
+
 ## v2.2.1 (2026-07-25)
 
 Fixed Windows installer build path: the NSIS installer script now correctly references the payload directory using backslash paths and runs from the proper working directory to resolve relative paths.

@@ -1,9 +1,13 @@
 # Builds the game once (a plain Linux runner is enough: install.sh's own
 # build has no OS-specific output, it's just index.html + doomgeneric.js),
 # then wraps that same payload three ways: a self-extracting Linux
-# installer (makeself), a Windows installer (NSIS) with Desktop/Start Menu
-# shortcuts, and a macOS .app in a drag-to-Applications .dmg. All four
-# files plus a plain source archive are attached to one GitHub Release.
+# installer (makeself) with an app-menu uninstall entry, a Windows
+# installer (NSIS) with Desktop/Start Menu shortcuts and a Control Panel
+# uninstall entry, and a macOS .app in a drag-to-Applications .dmg
+# (uninstalled the normal macOS way: drag to Trash). All three installers
+# let the user pick which freely redistributable WADs to download during
+# install (see assets/freeware_pack.py). All four files plus a plain
+# source archive are attached to one GitHub Release.
 #
 # assets/icon.png (if present) is picked up automatically and converted to
 # .ico / .icns for the platforms that want it; without it, everything
@@ -144,10 +148,16 @@ jobs:
         shell: pwsh
         run: installers/windows/make-icon.ps1
 
+      - name: Compute version
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "APP_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
       - name: Build installer
         working-directory: installers/windows
         shell: cmd
-        run: '"C:\Program Files (x86)\NSIS\makensis.exe" /V4 installer.nsi'
+        run: '"C:\Program Files (x86)\NSIS\makensis.exe" /V4 /DVERSION=%APP_VERSION% installer.nsi'
 
       - name: Rename installer
         shell: bash
