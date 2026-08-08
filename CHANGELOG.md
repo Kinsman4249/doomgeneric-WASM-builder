@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+Update WASM compilation and packaging step to work with CloudFlare Static Pages
+
 ## v2.3.0 (2026-07-29)
 
 All three prebuilt installers (Linux, Windows, macOS) can now download and install optional freeware WADs at setup time. The Linux and macOS installers prompt the user yes/no per title; the Windows installer has a Components page with checkboxes. Titles available are Doom Shareware, Freedoom Phase 1 and 2, HACX, Chex Quest Trilogy, Harmony, WolfenDoom: First Encounter, and STRAIN, all fetched from their original sources (no bundled WAD files). Users can skip all downloads and use the in-browser picker instead to supply their own WAD.
