@@ -1,7 +1,8 @@
 # 08-freeware.sh - optional freeware game pack.
 #
 # Downloads freely redistributable games next to the build output (NOT into
-# any repository) and packs each file as base64 inside a small .js file.
+# any repository) and packs each file gzip-compressed, then base64-encoded,
+# inside a small .js file.
 # The page loads these with plain script tags, which work over file:// with
 # no server and no network, so the setup screen gets one-click buttons for:
 # Doom shareware, Freedoom Phase 1 and 2, HACX 1.2, the Chex Quest Trilogy

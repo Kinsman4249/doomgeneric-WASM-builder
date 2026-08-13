@@ -738,8 +738,11 @@ document.getElementById('dehfiles').addEventListener('change', function (e) {
  * Free games (one-click loading from the local freeware pack)
  * -------------------------------------------------------------------------
  * install.sh optionally downloads freely redistributable games and packs
- * each file as base64 inside freeware/<key>.js. Loading one here is just a
- * script tag (which file:// allows), then decoding the base64 into bytes.
+ * each file gzip-compressed, then base64-encoded, inside freeware/<key>.js
+ * (gzip first: WADs compress a lot, and it keeps files under Cloudflare
+ * Pages' 25 MiB per-file limit). Loading one here is just a script tag
+ * (which file:// allows), then reversing both steps: base64 to bytes, then
+ * gzip to the original WAD via the browser's native DecompressionStream.
  * Total conversions (Chex Quest, Harmony) ride on a Freedoom base WAD and
  * are loaded through the engine's -merge option so their sprites and flats
  * display properly, which plain -file cannot do on a vanilla engine.
@@ -767,6 +770,19 @@ function b64ToBytes(b64) {
   return out;
 }
 
+// Undo freeware_pack.py's gzip step. DecompressionStream is a native browser
+// API (no library needed) available in every current browser; on the rare
+// one that lacks it, fail with a clear message instead of a silent crash.
+function gunzipBytes(bytes) {
+  if (typeof DecompressionStream === 'undefined') {
+    return Promise.reject(new Error(
+      'This browser has no gzip decompression support (DecompressionStream). ' +
+      'Update your browser to load titles from the local pack.'));
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer().then(function (buf) { return new Uint8Array(buf); });
+}
+
 // Load one packed file by injecting its script tag; cached per key.
 const freewareCache = {};
 function loadFreewarePart(key) {
@@ -777,9 +793,11 @@ function loadFreewarePart(key) {
       sc.onload = function () {
         const entry = window.WASM_BUILDER_FREEWARE && window.WASM_BUILDER_FREEWARE[key];
         if (!entry) { reject(new Error(key + ': pack file is malformed')); return; }
-        const bytes = b64ToBytes(entry.b64);
+        const compressed = b64ToBytes(entry.b64);
         entry.b64 = null;   // free the big string
-        resolve({ name: entry.name, bytes: bytes });
+        gunzipBytes(compressed).then(function (bytes) {
+          resolve({ name: entry.name, bytes: bytes });
+        }, reject);
       };
       sc.onerror = function () {
         reject(new Error(key + ' is not in the local pack. Re-run ./install.sh and answer Y to the freeware pack.'));

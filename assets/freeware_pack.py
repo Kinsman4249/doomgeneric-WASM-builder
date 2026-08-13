@@ -3,6 +3,12 @@
 # the page can load with a script tag. Failures are warnings, not fatal:
 # the page explains per title if its file is missing.
 #
+# Each WAD is gzip-compressed before base64-encoding (the page reverses both
+# steps at load time). Two reasons: it roughly halves download size, and it
+# keeps every packed file under Cloudflare Pages' 25 MiB per-file limit -
+# freedoom1.wad/freedoom2.wad are ~27.5 MB raw, which base64 alone would
+# push to ~37 MB and fail that limit outright.
+#
 # Usage: freeware_pack.py <outdir> [key ...]
 # With no keys given, every title in PLAN is fetched (the install.sh "get
 # everything" path). With keys given, only those PLAN entries are fetched -
@@ -97,7 +103,7 @@ for key, url, member, engine_name in PLAN:
             continue
         if engine_name.endswith(".wad") and raw[:4] not in (b"IWAD", b"PWAD"):
             raise RuntimeError("not a WAD (bad magic)")
-        b64 = base64.b64encode(raw).decode("ascii")
+        b64 = base64.b64encode(gzip.compress(raw, 9)).decode("ascii")
         with open(outpath, "w") as f:
             f.write('window.WASM_BUILDER_FREEWARE = window.WASM_BUILDER_FREEWARE || {};\n')
             f.write('window.WASM_BUILDER_FREEWARE[%s] = { name: %s, b64: %s };\n'

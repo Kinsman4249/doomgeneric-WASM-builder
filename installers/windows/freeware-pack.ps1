@@ -1,11 +1,12 @@
 # freeware-pack.ps1 - Windows equivalent of assets/freeware_pack.py.
 #
 # Windows has no python3 by default, so this is a from-scratch port of that
-# script's PLAN table and download/extract/base64 logic, using only .NET
-# (same "no extra tooling on the target machine" approach as make-icon.ps1).
-# It writes the exact same freeware/<key>.js format assets/index.html
-# already knows how to load, so nothing on the web page side needs to
-# change. Keep this PLAN table in sync with assets/freeware_pack.py's.
+# script's PLAN table and download/extract/gzip/base64 logic, using only
+# .NET (same "no extra tooling on the target machine" approach as
+# make-icon.ps1). It writes the exact same freeware/<key>.js format
+# assets/index.html already knows how to load (gzip-compressed, then
+# base64-encoded), so nothing on the web page side needs to change. Keep
+# this PLAN table in sync with assets/freeware_pack.py's.
 #
 # Usage: freeware-pack.ps1 -OutDir <dir> -Keys key1,key2,...
 # Called once per install, at the end of installer.nsi's Section "Install",
@@ -115,7 +116,17 @@ foreach ($entry in $Plan) {
             }
         }
 
-        $b64 = [Convert]::ToBase64String($raw)
+        # Gzip before base64: roughly halves the payload and keeps the file
+        # under Cloudflare Pages' 25 MiB limit when this same pack is used
+        # for a site deploy (freedoom1.wad/freedoom2.wad are ~27.5 MB raw).
+        $gzOut = New-Object System.IO.MemoryStream
+        $gzWriter = New-Object System.IO.Compression.GZipStream($gzOut, [System.IO.Compression.CompressionLevel]::Optimal, $true)
+        $gzWriter.Write($raw, 0, $raw.Length)
+        $gzWriter.Dispose()
+        $compressed = $gzOut.ToArray()
+        $gzOut.Dispose()
+
+        $b64 = [Convert]::ToBase64String($compressed)
         $keyJson = '"' + $entry.Key + '"'
         $nameJson = '"' + $entry.Name + '"'
         $js = "window.WASM_BUILDER_FREEWARE = window.WASM_BUILDER_FREEWARE || {};`n" +
