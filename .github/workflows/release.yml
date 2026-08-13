@@ -37,11 +37,15 @@
 # 2. Create an API token: My Profile > API Tokens > "Edit Cloudflare
 #    Workers" template (or a custom token with Account.Cloudflare Pages:
 #    Edit) scoped to your account.
-# 3. In this repo: Settings > Secrets and variables > Actions, add:
+# 3. In this repo: Settings > Secrets and variables > Actions, add secrets:
 #      CLOUDFLARE_API_TOKEN   - the token from step 2
 #      CLOUDFLARE_ACCOUNT_ID  - found on the right side of any Cloudflare
 #                                dashboard page
-#      CLOUDFLARE_PAGES_PROJECT - the Pages project name from step 1
+#    and a repo variable (Variables tab, not Secrets - it isn't sensitive):
+#      CLOUDFLARE_PAGES_PROJECT - the Pages project's *name* (Workers & Pages
+#                                dashboard), which can differ from its
+#                                <name>.pages.dev subdomain if that name was
+#                                already taken
 #
 # RUNNING MANUALLY
 # -----------------
@@ -254,11 +258,11 @@ jobs:
         run: |
           if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] \
              && [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ] \
-             && [ -n "${{ secrets.CLOUDFLARE_PAGES_PROJECT }}" ]; then
+             && [ -n "${{ vars.CLOUDFLARE_PAGES_PROJECT }}" ]; then
             echo "ready=1" >> "$GITHUB_OUTPUT"
           else
             echo "ready=0" >> "$GITHUB_OUTPUT"
-            echo "::warning::Cloudflare secrets not set (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_PAGES_PROJECT). Skipping Cloudflare Pages deploy - see the setup notes at the top of this workflow file."
+            echo "::warning::Cloudflare config not set (secrets CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID; variable CLOUDFLARE_PAGES_PROJECT). Skipping Cloudflare Pages deploy - see the setup notes at the top of this workflow file."
           fi
 
       - name: Download payload
@@ -280,7 +284,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT }} --branch=main
+          command: pages deploy site --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }} --branch=main
 
   # =========================================================================
   # Collect everything and publish one Release.
