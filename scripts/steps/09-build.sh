@@ -18,7 +18,7 @@ fi
 if grep -q "UTF8Decoder" "$BUILD_DIR/doomgeneric.js"; then
   warn "doomgeneric.js still contains the TextDecoder string path. The page"
   warn "ships a shim that keeps this from crashing, but it is unexpected with"
-  warn "the pinned toolchain. See the README troubleshooting section."
+  warn "the pinned toolchain. See docs/TROUBLESHOOTING.md."
 else
   log "Verified: doomgeneric.js uses the plain JS string decoder (as intended)."
 fi
