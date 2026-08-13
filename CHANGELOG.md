@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [2.4.2] - 2026-08-13
+
+### Fixed
+
+- Fixed the Cloudflare Pages deploy failing on `freedoom1.wad` and `freedoom2.wad` (each about 27.5 MB raw, base64-encoded to about 36.6 MB), which exceeded Cloudflare Pages' 25 MiB per-file limit. `assets/freeware_pack.py` and its Windows port `installers/windows/freeware-pack.ps1` now gzip-compress each WAD before base64-encoding it into `freeware/<key>.js`, bringing both files to about 13 MB. `assets/index.html` reverses both steps at load time (base64 decode, then gzip decompress via the browser's native `DecompressionStream`), so the setup screen's one-click title buttons work unchanged.
+
 ## [2.4.1] - 2026-08-12
 
 ### Changed
