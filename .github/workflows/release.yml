@@ -9,6 +9,11 @@
 # install (see assets/freeware_pack.py). All four files plus a plain
 # source archive are attached to one GitHub Release.
 #
+# The same tag also deploys the playable site straight to Cloudflare
+# Pages (see the deploy-cloudflare-pages job): the freeware pack is
+# downloaded fresh on the runner and uploaded to Cloudflare directly via
+# the API, so those WAD files never touch this git repo.
+#
 # assets/icon.png (if present) is picked up automatically and converted to
 # .ico / .icns for the platforms that want it; without it, everything
 # still builds, shortcuts just use the target file's default icon.
@@ -22,7 +27,21 @@
 #
 # A new GitHub Release appears under the "Releases" tab once the workflow
 # finishes (several minutes: it builds the engine, then packages it three
-# ways). See: https://semver.org
+# ways), and the Cloudflare Pages site redeploys with it. See: https://semver.org
+#
+# CLOUDFLARE PAGES SETUP (one-time)
+# -----------------------------------
+# 1. Create a Pages project in the Cloudflare dashboard (Workers & Pages >
+#    Create > Pages > "Upload assets" / direct upload - do NOT connect it
+#    to this GitHub repo, the workflow uploads directly instead).
+# 2. Create an API token: My Profile > API Tokens > "Edit Cloudflare
+#    Workers" template (or a custom token with Account.Cloudflare Pages:
+#    Edit) scoped to your account.
+# 3. In this repo: Settings > Secrets and variables > Actions, add:
+#      CLOUDFLARE_API_TOKEN   - the token from step 2
+#      CLOUDFLARE_ACCOUNT_ID  - found on the right side of any Cloudflare
+#                                dashboard page
+#      CLOUDFLARE_PAGES_PROJECT - the Pages project name from step 1
 #
 # RUNNING MANUALLY
 # -----------------
@@ -210,6 +229,58 @@ jobs:
           name: installer-macos
           path: dist/*.dmg
           retention-days: 1
+
+  # =========================================================================
+  # Cloudflare Pages: deploy the playable site straight from this runner.
+  # The freeware WAD pack is downloaded fresh here (from its original
+  # sources, via assets/freeware_pack.py) and uploaded directly to
+  # Cloudflare over the API - it is never committed to git, never a
+  # release asset, and never stored anywhere in this repo or its history.
+  # Skipped automatically (with a warning) if the Cloudflare secrets
+  # below have not been configured yet.
+  # =========================================================================
+  deploy-cloudflare-pages:
+    name: Deploy (Cloudflare Pages)
+    needs: build-payload
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Check Cloudflare secrets are configured
+        id: cf-check
+        run: |
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] \
+             && [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ] \
+             && [ -n "${{ secrets.CLOUDFLARE_PAGES_PROJECT }}" ]; then
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::Cloudflare secrets not set (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_PAGES_PROJECT). Skipping Cloudflare Pages deploy - see the setup notes at the top of this workflow file."
+          fi
+
+      - name: Download payload
+        if: steps.cf-check.outputs.ready == '1'
+        uses: actions/download-artifact@v4
+        with:
+          name: web-payload
+          path: site
+
+      - name: Download freeware pack
+        if: steps.cf-check.outputs.ready == '1'
+        run: |
+          mkdir -p site/freeware
+          python3 assets/freeware_pack.py site/freeware
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.cf-check.outputs.ready == '1'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT }} --branch=main
 
   # =========================================================================
   # Collect everything and publish one Release.
