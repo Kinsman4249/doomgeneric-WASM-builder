@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-Update WASM compilation and packaging step to work with CloudFlare Static Pages
+## [2.4.0] - 2026-08-12
+
+### Added
+
+Added an optional `deploy-cloudflare-pages` job to the release workflow (`.github/workflows/release.yml`) that runs on the same `v*.*.*` tag push as the existing installer builds. It downloads the already-built web payload (index.html and doomgeneric.js) from the build-payload job, fetches the freeware WAD pack fresh from its original sources on the runner via `assets/freeware_pack.py`, and uploads the result to Cloudflare Pages with `wrangler pages deploy` (cloudflare/wrangler-action@v4) as a direct-upload deploy, so the WAD files are never committed to this repository or stored in its git history. The job checks for three repository secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`) and, if any are missing, prints a GitHub Actions warning and skips itself without failing the rest of the release.
+
+Added a "Deploying to Cloudflare Pages" section to README.md with one-time setup instructions: creating a Cloudflare Pages project via its "Upload assets" direct-upload path, creating a scoped API token, locating the Cloudflare account ID, and adding the three secrets above to the GitHub repository. The section includes a pitfall note that Cloudflare's Create button defaults to a Worker (a `workers.dev` subdomain with a lower free-tier request cap) rather than a Pages project (a `pages.dev` subdomain), and how to tell the two apart.
 
 ## v2.3.0 (2026-07-29)
 
@@ -18,7 +24,7 @@ Fixed Windows installer build path: the NSIS installer script now correctly refe
 
 ## v2.2.0 (2026-07-24)
 
-The release workflow now builds and publishes three platform-specific installers alongside the source archive. Each tagged release now includes a self-extracting Linux installer (built with makeself), a Windows GUI installer (built with NSIS), and a macOS disk image containing an app bundle (built with hdiutil), all three built from the exact same engine and index.html. Users no longer need to install the Emscripten toolchain, Fedora, Debian, or Distrobox—they can download a ready-to-run installer for their platform from the Releases page.
+The release workflow now builds and publishes three platform-specific installers alongside the source archive. Each tagged release now includes a self-extracting Linux installer (built with makeself), a Windows GUI installer (built with NSIS), and a macOS disk image containing an app bundle (built with hdiutil), all three built from the exact same engine and index.html. Users no longer need to install the Emscripten toolchain, Fedora, Debian, or Distrobox - they can download a ready-to-run installer for their platform from the Releases page.
 
 The README now documents these prebuilt installers, including installation instructions and behavior notes (Linux adds a .desktop entry and app-menu shortcut, Windows adds Start Menu and Desktop shortcuts, macOS uses a standard drag-to-Applications .dmg). The build process includes optional icon support (assets/icon.png is automatically converted to .ico for Windows and .icns for macOS, with graceful fallback if the icon is missing).
 
