@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## [2.4.1] - 2026-08-12
+
+### Changed
+
+- Split the single, long README into focused guides under `docs/` (`BUILDING.md`, `DEPLOYING.md`, `ENGINE-PATCHES.md`, `INSTALLERS.md`, `PLAYING.md`, `TROUBLESHOOTING.md`), with the README trimmed to a short overview and quick-start plus links into each guide. Content was carried over as-is; this was a reorganization, not a rewrite.
+
+### Fixed
+
+- Moved `CLOUDFLARE_PAGES_PROJECT` in the release workflow from a repository secret to a repository variable, since a Pages project name is not sensitive data. Updated the setup comments in `.github/workflows/release.yml`, the readiness check, and the deploy step's `project-name` argument to read `vars.CLOUDFLARE_PAGES_PROJECT` instead of `secrets.CLOUDFLARE_PAGES_PROJECT`, and updated the skipped-deploy warning text to name the config source (secret vs. variable) for each value. Repos that already set this as a secret need to re-add it as a repository variable for the Cloudflare Pages deploy job to run.
+- Updated the build-step warning about a `TextDecoder`-dependent `doomgeneric.js` to point at `docs/TROUBLESHOOTING.md` instead of the now-removed README troubleshooting section.
+
 ## [2.4.0] - 2026-08-12
 
 ### Added
