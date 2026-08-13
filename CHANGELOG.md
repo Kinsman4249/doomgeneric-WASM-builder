@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [2.4.3] - 2026-08-12
+
+### Fixed
+
+- Corrected the setup screen badges (assets/index.html): fixed the GPL relicense date (id Software released Doom's source under a restrictive license in 1997; the GPLv2 relicense happened on October 3, 1999) and changed the engine claim from "100% vanilla" to "vanilla gameplay + mouselook" to reflect the engine patches documented in docs/ENGINE-PATCHES.md.
+
 ## [2.4.2] - 2026-08-13
 
 ### Fixed
