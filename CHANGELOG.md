@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Touch screen controls
+
+### Fixed
+
+- Music: no sound at all in the browser build (not yet fixed)
+
 ## [2.4.3] - 2026-08-12
 
 ### Fixed
