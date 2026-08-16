@@ -2,13 +2,15 @@
 
 ## Unreleased
 
-### Added
-
-- Touch screen controls
-
 ### Fixed
 
 - Music: no sound at all in the browser build (not yet fixed)
+
+## [2.5.0] - 2026-08-16
+
+### Added
+
+- On-screen touch controls for the WASM build: the page detects a touch device (`(pointer: coarse)`, touch-point count, or touch-event support) and, after pressing Start DOOM, shows a floating overlay with a bottom-left virtual joystick (move and strafe), a right-half look-drag zone that turns and looks using the same Sens X / Sens Y and "invert look" as the mouse, and FIRE, USE, and MENU buttons. The overlay drives the same input paths as the desktop (synthesized keys through the remap pipeline, and the mouse-bridge functions for the look zone), so custom key bindings apply to touch; auto-detection pre-checks a "show on-screen touch controls" checkbox on the setup screen that can force the overlay on or off. While Doom's own menu is open, a new engine export (`_DG_EM_IsMenuActive`) is polled so the buttons and joystick switch to menu roles (FIRE confirms, USE backs up a menu, the joystick moves and adjusts sliders). Showing the overlay also requests fullscreen and, where supported, a landscape lock. Documented in a new "Touch controls" section of `docs/PLAYING.md`, including the honest limitations (typing a new save-slot name, the in-game Customize Controls screen, and digital-only movement).
 
 ## [2.4.3] - 2026-08-12
 
