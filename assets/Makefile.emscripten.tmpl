@@ -73,8 +73,10 @@ CFLAGS += -O2 -fno-strict-aliasing -DFEATURE_SOUND -DDOOMGENERIC_RESX=320 -DDOOM
 #   EXPORTED_RUNTIME_METHODS   : keep callMain (to start the game manually) and
 #                                FS (to write the WAD) reachable from JS.
 #   EXPORTED_FUNCTIONS         : keep the C main() reachable for callMain, and
-#                                the two mouse-bridge functions the page calls
-#                                for mouse look (see the engine patches).
+#                                the page-facing bridge functions it calls:
+#                                mouse look (DG_EM_MouseMove/Buttons), the
+#                                frame/game-tick counters behind the FPS and
+#                                menu-state (see the engine patches).
 #   INVOKE_RUN=0               : do NOT auto-run main() on load; the page starts
 #                                the engine itself, after the WAD is in place.
 #   -O2 (at link)              : REQUIRED at link time too with Emscripten:
@@ -99,7 +101,7 @@ LDFLAGS += $(SDL_FLAGS) \
 	-s MODULARIZE=1 \
 	-s EXPORT_NAME="DoomModule" \
 	-s EXPORTED_RUNTIME_METHODS=['callMain','FS'] \
-	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons','_DG_EM_GetFrameCount','_DG_EM_GetGameTic'] \
+	-s EXPORTED_FUNCTIONS=['_main','_DG_EM_MouseMove','_DG_EM_MouseButtons','_DG_EM_GetFrameCount','_DG_EM_GetGameTic','_DG_EM_IsMenuActive'] \
 	-s INVOKE_RUN=0
 
 # Standard C math and C libraries.

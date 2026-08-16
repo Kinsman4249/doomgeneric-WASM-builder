@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>DOOM</title>
 <style>
   /*
@@ -217,6 +218,94 @@
     font-size: 13px;
     white-space: nowrap;
   }
+
+  /* -------- on-screen touch controls (auto-shown on coarse pointers) -------- */
+  #touchui {
+    position: absolute;
+    inset: 0;
+    z-index: 5;             /* above the canvas (z 1), below the HUD (z 10) */
+    display: none;
+    pointer-events: none;   /* children re-enable it where they sit */
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* A transparent right-half drag zone: drag to turn and look. */
+  #lookZone {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 50%;
+    pointer-events: auto;
+  }
+  /* The joystick: a ~140px touch target bottom-left holding a ~48px disc. */
+  #joyBase {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    width: 140px;
+    height: 140px;
+    pointer-events: auto;
+    border-radius: 50%;
+    border: 2px outset #666;
+    background:
+      radial-gradient(circle, rgba(60, 60, 60, 0.55) 0%, rgba(30, 30, 30, 0.45) 62%,
+                      rgba(0, 0, 0, 0.85) 100%);
+  }
+  #joyKnob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 56px;
+    height: 56px;
+    margin-left: -28px;
+    margin-top: -28px;
+    border-radius: 50%;
+    border: 2px inset #888;
+    background: radial-gradient(circle, #b0b0b0 0%, #555 75%);
+  }
+  /* FIRE and USE sit above the bottom-right safe area. */
+  #btnFire, #btnUse {
+    position: absolute;
+    right: 16px;
+    width: 76px;
+    height: 76px;
+    pointer-events: auto;
+    border-radius: 50%;
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 20px;
+    letter-spacing: 1px;
+    color: #fff;
+    background: #7a0000;
+    border: 4px outset #a33;
+    padding: 0;
+  }
+  #btnFire:active, #btnUse:active { border-style: inset; }
+  #btnFire  { bottom: calc(12px + env(safe-area-inset-bottom)); }
+  #btnUse   { right: calc(96px + env(safe-area-inset-right)); bottom: calc(96px + env(safe-area-inset-bottom)); }
+  /* MENU (menu key / Esc): a small button top-right. */
+  #btnMenu {
+    position: absolute;
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(8px + env(safe-area-inset-right));
+    pointer-events: auto;
+    padding: 4px 10px;
+    font-family: Impact, "Arial Black", sans-serif;
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: #eee;
+    background: #333;
+    border: 3px outset #666;
+  }
+  #btnMenu:active { border-style: inset; }
+
+  /* On a coarse pointer (touch) the HUD has no hover to reveal it and the
+     mouse-capture hint is meaningless, so keep the HUD readable and hide it. */
+  @media (pointer: coarse) {
+    #hud { opacity: 0.95; }
+    #mousehint { display: none !important; }
+  }
+
   #canvas { display: block; background: #000; }
   #canvas.crisp { image-rendering: pixelated; }
   #canvas.smooth { image-rendering: auto; }
@@ -292,6 +381,15 @@
       <label><input type="checkbox" id="rawInput" checked> raw input</label>
       &nbsp;&nbsp;
       <label><input type="checkbox" id="invertLook"> invert look</label>
+    </p>
+    <p>
+      <label><input type="checkbox" id="touchControls"> show on-screen touch controls</label>
+      &nbsp;&nbsp;
+      <label><input type="checkbox" id="autoFullscreen" checked> auto fullscreen</label>
+      <br><span class="hint">Touch controls are for phones, tablets, and touch
+      screens: a joystick, a look-drag area, and FIRE/USE/MENU buttons. They
+      turn on automatically here when a touch device is detected; untick to
+      force them off (or tick on a desktop to force them on).</span>
     </p>
   </div>
 
@@ -416,6 +514,16 @@
 
   <!-- The game canvas. tabindex="-1" lets us focus it from code. -->
   <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+
+  <!-- On-screen touch controls; shown when a touch device is detected.
+       Inserted before #errbox so fatal errors (z-index 20) stay on top. -->
+  <div id="touchui" style="display:none">
+    <div id="lookZone"></div>
+    <div id="joyBase"><div id="joyKnob"></div></div>
+    <button id="btnFire" type="button">FIRE</button>
+    <button id="btnUse"  type="button">USE</button>
+    <button id="btnMenu" type="button">MENU</button>
+  </div>
 
   <!-- Shown only if the engine fails to start (see showFatalError below). -->
   <div id="errbox"></div>
@@ -1072,6 +1180,303 @@ document.addEventListener('pointerlockchange', function () {
 });
 
 /* =========================================================================
+ * Touch controls
+ * -------------------------------------------------------------------------
+ * When a coarse/touch pointer is detected (or the setup-screen checkbox is
+ * forced), the stage shows a floating overlay: a bottom-left joystick (move
+ * and strafe), a right-half drag zone (turn and look), and FIRE/USE/MENU
+ * buttons. Each gesture drives the EXACT same input paths as the desktop:
+ * the joystick and buttons synthesize keyboard events for the remap pipeline
+ * (so custom bindings apply), and the drag zone feeds the mouse-bridge
+ * functions, reusing the desktop HUD sensitivity.
+ *
+ * Doom's menu is polled from the engine. While it is open the touch buttons
+ * switch roles: FIRE confirms (Enter), USE goes back one menu (Backspace),
+ * the joystick X axis drives the left/right arrows (sliders) instead of
+ * strafing, and MENU still opens/closes it (Esc).
+ *
+ * A central applyInputs() reconciles what the player is physically holding
+ * against the current key mapping, so a menu-toggle mid-drag never leaves a
+ * stuck key: on any toggle everything is released first, then still-held
+ * inputs are re-applied under the new mapping.
+ * ========================================================================= */
+
+const touchui         = document.getElementById('touchui');
+const lookZone        = document.getElementById('lookZone');
+const joyBase         = document.getElementById('joyBase');
+const joyKnob         = document.getElementById('joyKnob');
+const btnFire         = document.getElementById('btnFire');
+const btnUse          = document.getElementById('btnUse');
+const btnMenu         = document.getElementById('btnMenu');
+const touchControlsCb = document.getElementById('touchControls');
+const autoFullscreenCb = document.getElementById('autoFullscreen');
+
+// The engine key codes the touch layer is currently holding down, so a
+// menu-toggle or quit can release them all cleanly (nothing ever sticks).
+const touchHeldKeys = new Set();
+// Is Doom's menu on screen right now? Polled from the engine.
+let touchMenuOpen = false;
+// Are the on-screen touch controls shown this session (set from the setup
+// checkbox on Start)?
+let touchShown = false;
+
+// Sub-pixel look remainders, exactly like the desktop mouse accumulator.
+let touchAccX = 0;
+let touchAccY = 0;
+
+// Physical hold state (are the fingers down?) vs. the key codes currently
+// pressed for them. They can differ briefly: when the menu toggles, all
+// pressed codes are released, then still-held inputs are re-pressed under
+// the new mapping.
+const btnHeld   = { fire: false, use: false, menu: false };
+const btnPressed = { fire: null, use: null, menu: null };
+const joyHeld   = { up: false, down: false, left: false, right: false };
+const joyPressed = { up: null, down: null, left: null, right: null };
+
+// Per-zone pointer ids so only the finger that started a drag controls it.
+let joyPointer = null;
+let lookPointer = null;
+let lastLookX = null;
+let lastLookY = null;
+
+// Build a synthetic KeyboardEvent for dispatching through the remap pipeline.
+function keyEvent(type, code) {
+  return new KeyboardEvent(type, { code: code, bubbles: true, cancelable: true });
+}
+
+function pressKey(code) {
+  if (typeof code !== 'string' || code === '') return;
+  if (touchHeldKeys.has(code)) return;      // already held: keep it held
+  canvas.dispatchEvent(keyEvent('keydown', code));
+  touchHeldKeys.add(code);
+}
+
+function releaseKey(code) {
+  if (typeof code !== 'string' || code === '') return;
+  if (!touchHeldKeys.has(code)) return;     // releasing an unheld key: no-op
+  canvas.dispatchEvent(keyEvent('keyup', code));
+  touchHeldKeys.delete(code);
+}
+
+function releaseAllTouchKeys() {
+  Array.from(touchHeldKeys).forEach(releaseKey);
+}
+
+// The engine key a setup-screen bind maps to, read live so rebinds apply to
+// touch too. buildRemapTable() maps physical key -> engine key; the setup
+// field holds the physical key, so look up the engine side of that pair.
+function touchBind(name) {
+  const phys = document.getElementById('bind-' + name).value;
+  return buildRemapTable()[phys];
+}
+
+// The engine key a touch button/axis should press right now, honoring the
+// menu state. In-game: fire = the Fire bind, use = the Use bind. In Doom's
+// menu: fire = Enter (confirm), use = Backspace (back one menu).
+function buttonCode(name) {
+  if (name === 'fire') return touchMenuOpen ? 'Enter'    : touchBind('fire');
+  if (name === 'use')  return touchMenuOpen ? 'Backspace' : touchBind('use');
+  return 'Escape';                                       // menu button
+}
+function axisCode(axis) {
+  if (axis === 'left')  return touchMenuOpen ? touchBind('left')  : touchBind('sleft');
+  if (axis === 'right') return touchMenuOpen ? touchBind('right') : touchBind('sright');
+  return touchBind(axis);                                  // up / down
+}
+
+// Press/release the correct codes for whatever is still physically held.
+function applyInputs() {
+  ['fire', 'use', 'menu'].forEach(function (name) {
+    const code = buttonCode(name);
+    if (btnHeld[name]) {
+      if (btnPressed[name] !== code) {
+        if (btnPressed[name]) releaseKey(btnPressed[name]);
+        pressKey(code);
+        btnPressed[name] = code;
+      }
+    } else if (btnPressed[name]) {
+      releaseKey(btnPressed[name]);
+      btnPressed[name] = null;
+    }
+  });
+  ['up', 'down', 'left', 'right'].forEach(function (axis) {
+    const code = axisCode(axis);
+    if (joyHeld[axis]) {
+      if (joyPressed[axis] !== code) {
+        if (joyPressed[axis]) releaseKey(joyPressed[axis]);
+        pressKey(code);
+        joyPressed[axis] = code;
+      }
+    } else if (joyPressed[axis]) {
+      releaseKey(joyPressed[axis]);
+      joyPressed[axis] = null;
+    }
+  });
+}
+
+// Wire one moment button: track its physical hold, then reconcile.
+function wireTouchButton(btn, name) {
+  btn.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    if (btn.setPointerCapture) { try { btn.setPointerCapture(e.pointerId); } catch (err) {} }
+    btnHeld[name] = true;
+    applyInputs();
+  });
+  function btnUp() {
+    btnHeld[name] = false;
+    applyInputs();
+  }
+  btn.addEventListener('pointerup', btnUp);
+  btn.addEventListener('pointercancel', btnUp);
+  // Stop the browser from launching context menus / synthetic clicks.
+  btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+}
+
+wireTouchButton(btnFire, 'fire');
+wireTouchButton(btnUse, 'use');
+wireTouchButton(btnMenu, 'menu');
+
+// Joystick: deflection in [-1,1] clamped to the knob radius, with a dead
+// threshold for digital Doom movement. Negative dy = up (forward).
+const JOY_RADIUS = 48;
+const JOY_PRESS = 0.35;   // push past this to press an axis
+const JOY_RELEASE = 0.25; // release only once back inside this (hysteresis)
+
+function joyHandle(dx, dy) {
+  const mag = Math.hypot(dx, dy);
+  if (mag > 1) { dx /= mag; dy /= mag; }
+  joyKnob.style.left = '50%';
+  joyKnob.style.top = '50%';
+  joyKnob.style.marginLeft = (-28 + dx * JOY_RADIUS) + 'px';
+  joyKnob.style.marginTop = (-28 + dy * JOY_RADIUS) + 'px';
+
+  // Digital axes with hysteresis: push past PRESS to engage, back inside
+  // RELEASE to disengage, so a small wobble does not chatter.
+  joyHeld.up    = joyHeld.up    ? dy < -JOY_RELEASE : dy < -JOY_PRESS;
+  joyHeld.down  = joyHeld.down  ? dy >  JOY_RELEASE : dy >  JOY_PRESS;
+  joyHeld.left  = joyHeld.left  ? dx < -JOY_RELEASE : dx < -JOY_PRESS;
+  joyHeld.right = joyHeld.right ? dx >  JOY_RELEASE : dx >  JOY_PRESS;
+  applyInputs();
+}
+
+// Joystick pointer tracking: deflection is finger position relative to the
+// base centre, in JOY_RADIUS units (so it naturally clamps to [-1,1]).
+function joyPointerPos(e) {
+  const rect = joyBase.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  return [ (e.clientX - cx) / JOY_RADIUS, (e.clientY - cy) / JOY_RADIUS ];
+}
+
+joyBase.addEventListener('pointerdown', function (e) {
+  if (joyPointer !== null) return;        // one finger on the stick at a time
+  e.preventDefault();
+  joyPointer = e.pointerId;
+  try { joyBase.setPointerCapture(e.pointerId); } catch (err) {}
+  const p = joyPointerPos(e);
+  joyHandle(p[0], p[1]);
+});
+joyBase.addEventListener('pointermove', function (e) {
+  if (joyPointer !== e.pointerId) return;
+  e.preventDefault();
+  const p = joyPointerPos(e);
+  joyHandle(p[0], p[1]);
+});
+function joyRelease(e) {
+  if (joyPointer !== e.pointerId) return;
+  joyPointer = null;
+  joyHeld.up = joyHeld.down = joyHeld.left = joyHeld.right = false;
+  joyKnob.style.marginLeft = '-28px';
+  joyKnob.style.marginTop = '-28px';
+  applyInputs();
+}
+joyBase.addEventListener('pointerup', joyRelease);
+joyBase.addEventListener('pointercancel', joyRelease);
+
+// Look-drag zone: same accumulator pattern as the desktop mousemove handler,
+// reusing the HUD sensitivities and the invert setting.
+lookZone.addEventListener('pointerdown', function (e) {
+  if (lookPointer !== null) return;       // one finger dragging at a time
+  e.preventDefault();
+  lookPointer = e.pointerId;
+  try { lookZone.setPointerCapture(e.pointerId); } catch (err) {}
+  lastLookX = e.clientX;
+  lastLookY = e.clientY;
+});
+lookZone.addEventListener('pointermove', function (e) {
+  if (lookPointer !== e.pointerId) return;
+  e.preventDefault();
+  if (!doomModule || !gameStarted) return;
+  const dx = e.clientX - lastLookX;
+  const dy = e.clientY - lastLookY;
+  lastLookX = e.clientX;
+  lastLookY = e.clientY;
+  const sensX = parseFloat(sensXHud.value) || 1;
+  const sensY = parseFloat(sensYHud.value) || 1;
+  touchAccX += dx * sensX;
+  touchAccY += dy * sensY * (invertLook.checked ? -1 : 1);
+  const px = Math.trunc(touchAccX);
+  const py = Math.trunc(touchAccY);
+  if (px !== 0 || py !== 0) {
+    doomModule._DG_EM_MouseMove(px, py);
+    touchAccX -= px;
+    touchAccY -= py;
+  }
+});
+function lookRelease(e) {
+  if (lookPointer !== e.pointerId) return;
+  lookPointer = null;
+  lastLookX = lastLookY = null;
+}
+lookZone.addEventListener('pointerup', lookRelease);
+lookZone.addEventListener('pointercancel', lookRelease);
+
+// Block the browser's gestures on the whole touch layer: scroll, pinch and
+// double-tap zoom, long-press callout, and compatibility mouse/context-menu
+// events that would otherwise reach the game's capture/mouse handlers.
+// touchstart/touchmove listeners are made non-passive so preventDefault
+// actually cancels the native scroll/zoom.
+function preventTouchGesture(e) { e.preventDefault(); }
+touchui.addEventListener('touchstart', preventTouchGesture, { passive: false });
+touchui.addEventListener('touchmove',  preventTouchGesture, { passive: false });
+touchui.addEventListener('pointermove', preventTouchGesture);
+touchui.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+// Stop taps from reaching document-level mouse handlers (which are tied to
+// desktop pointer lock and would otherwise fire after every touch tap).
+touchui.addEventListener('pointerdown', function (e) { e.preventDefault(); }, true);
+
+// Poll Doom's menu state once per 100ms so the touch buttons can switch
+// between game keys and menu keys. Started once, lazily, when touch controls
+// are shown.
+let touchPollStarted = false;
+function startTouchPoll() {
+  if (touchPollStarted) return;
+  touchPollStarted = true;
+  setInterval(function () {
+    if (!touchShown || !doomModule || !gameStarted) return;
+    let active = 0;
+    try { active = doomModule._DG_EM_IsMenuActive() ? 1 : 0; } catch (err) { return; }
+    if (active !== (touchMenuOpen ? 1 : 0)) {
+      releaseAllTouchKeys();
+      btnPressed.fire = btnPressed.use = btnPressed.menu = null;
+      joyPressed.up = joyPressed.down = joyPressed.left = joyPressed.right = null;
+      touchMenuOpen = active === 1;
+      applyInputs();
+    }
+  }, 100);
+}
+
+// Refresh auto-detection result into the checkbox (the user can still override
+// on the setup screen; Start re-reads it as the final word).
+(function () {
+  const isTouch =
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+    navigator.maxTouchPoints > 0 ||
+    'ontouchstart' in window;
+  touchControlsCb.checked = isTouch;
+})();
+
+/* =========================================================================
  * FPS counter
  * -------------------------------------------------------------------------
  * The engine increments a frame counter every time it renders (see the
@@ -1634,6 +2039,25 @@ startBtn.addEventListener('click', function () {
   // Apply the initial filter (default: crisp / original pixels).
   setFilter(filterHud.value);
 
+  // Touch controls: the setup checkbox is the final word (auto-detection only
+  // pre-checks it on load). When shown, add the overlay, start the menu poll,
+  // focus the game, and ask for fullscreen plus a landscape lock if asked.
+  touchShown = touchControlsCb.checked;
+  if (touchShown) {
+    touchMenuOpen = false;
+    touchui.style.display = 'flex';
+    startTouchPoll();
+    canvas.focus();
+    if (autoFullscreenCb.checked && stage.requestFullscreen) {
+      stage.requestFullscreen().catch(function () {});
+      if (screen.orientation && screen.orientation.lock) {
+        try { screen.orientation.lock('landscape').catch(function () {}); } catch (err) {}
+      }
+    }
+  } else {
+    touchui.style.display = 'none';
+  }
+
   bootEngine();
 });
 
@@ -1671,6 +2095,18 @@ window.wasmBuilderOnQuit = function () {
   mousehint.style.display = 'none';
   stage.style.display = 'none';
   document.getElementById('setup').style.display = 'block';
+
+  // Drop any touch key the player was holding and hide the touch overlay so a
+  // fresh Start (or a desktop re-run) starts from a clean slate.
+  releaseAllTouchKeys();
+  btnPressed.fire = btnPressed.use = btnPressed.menu = null;
+  joyPressed.up = joyPressed.down = joyPressed.left = joyPressed.right = null;
+  joyHeld.up = joyHeld.down = joyHeld.left = joyHeld.right = false;
+  joyKnob.style.marginLeft = '-28px';
+  joyKnob.style.marginTop = '-28px';
+  touchMenuOpen = false;
+  touchui.style.display = 'none';
+
   console.log('Engine quit; returned to the setup screen.');
 };
 

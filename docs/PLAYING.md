@@ -83,6 +83,56 @@ clamped to a comfortable range rather than a full 90 degrees up and down, and
 the sky texture can look stretched or tiled when looking far up. Both are
 normal for this technique.
 
+## Touch controls
+
+On a phone, tablet, or touch-screen PC the game detects the touch device and
+shows a floating control overlay: a virtual joystick, a look-drag zone, and
+FIRE, USE, and MENU buttons. Everything drives the exact same input paths as
+the desktop, so your custom key bindings apply to touch too.
+
+To detect a touch device the page uses `(pointer: coarse)`, the browser's
+touch-point count, and support for touch events; the result pre-checks the
+"show on-screen touch controls" checkbox on the setup screen. You can override
+it there for this game (untick to force the overlay off on a touch device, or
+tick it on a desktop to force it on). The overlay only appears after you press
+Start DOOM.
+
+The controls:
+
+1. **Joystick** (bottom-left): move and strafe. Push up/down to move forward
+   and backward, and left/right to strafe. Movement is digital, exactly like
+   vanilla Doom (there is no analog speed). The joystick only moves and
+   strafes; to turn, drag on the right side of the screen.
+2. **Look-drag** (right half of the screen): drag to turn and to look up and
+   down, using the same Sens X and Sens Y as the mouse and respecting the
+   in-game HUD and "invert look" setting.
+3. **FIRE** (bottom-right): fires. **USE** (bottom-right): opens doors and
+   operates switches.
+4. **MENU** (top-right): opens and closes Doom's menu.
+
+While Doom's own menu is open the buttons and joystick switch to menu roles:
+FIRE confirms the highlighted choice (like Enter), USE goes back one menu
+(like Backspace), and the joystick moves through the menu items (up/down) and
+adjusts sliders (left/right). MENU still opens and closes it. This is how you
+start a New Game, load a save, and reach the quit options entirely by touch.
+
+When the overlay is shown, pressing Start DOOM also asks the browser for
+fullscreen and, where supported, locks the screen to landscape. If the browser
+refuses (a silent failure), the game simply stays in its letterboxed window;
+the fullscreen button in the top bar still toggles it manually.
+
+Three honest limitations:
+
+- **Saving on a fresh slot needs a name typed with a real keyboard**. Doom
+  asks for a save-game name that can only be typed, so on touch you can only
+  re-save over an existing slot (it keeps the old name). The quicksave and
+  quickload toggles are not on the touch overlay.
+- **The in-game Options, Customize Controls screen is unusable without a
+  physical keyboard** (it expects held key presses, not taps). Rebind on the
+  setup screen instead; the page's remapping applies to the touch keys too.
+- **Movement is digital**, matching vanilla Doom; joystick deflection does not
+  change speed.
+
 ## Display: scaling and pixel filters
 
 The game canvas is scaled to fill the browser window. A small control bar

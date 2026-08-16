@@ -37,6 +37,11 @@ What you get:
    geometry) stop crashing, without changing gameplay behavior.
 10. DeHackEd and WAD merging support, so classic total conversions load with
     their graphics intact.
+11. On-screen touch controls for phones, tablets, and touch screens: a virtual
+    joystick (move + strafe), a right-side look-drag area, and FIRE, USE, and
+    MENU buttons that drive the same input paths as the mouse and keyboard.
+    Auto-detected on touch devices (with a setup-screen override) and reusing
+    your custom key bindings.
 
 ## Quick start
 

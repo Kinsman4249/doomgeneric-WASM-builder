@@ -123,7 +123,7 @@ index dff6936..2a31f6f 100644
  // Enables multiplayer support (network games)
  
 diff --git a/doomgeneric/doomgeneric_emscripten.c b/doomgeneric/doomgeneric_emscripten.c
-index 7076dd2..5eff33a 100644
+index 7076dd2..0d3cd3a 100644
 --- a/doomgeneric/doomgeneric_emscripten.c
 +++ b/doomgeneric/doomgeneric_emscripten.c
 @@ -3,6 +3,8 @@
@@ -151,7 +151,7 @@ index 7076dd2..5eff33a 100644
      default:
        key = tolower(key);
        break;
-@@ -139,6 +150,109 @@ static void handleKeyInput()
+@@ -139,6 +150,119 @@ static void handleKeyInput()
  }
  
  
@@ -238,6 +238,16 @@ index 7076dd2..5eff33a 100644
 +  return gametic;
 +}
 +
++// [WASM-builder touch controls] Whether Doom's menu is on screen right now.
++// The page polls this to switch the touch FIRE/USE buttons between game keys
++// (ControlLeft/Space) and menu keys (Enter/Backspace).
++extern boolean menuactive;
++
++EMSCRIPTEN_KEEPALIVE int DG_EM_IsMenuActive(void)
++{
++  return menuactive ? 1 : 0;
++}
++
 +// [WASM-builder] Runs when the player quits from Doom's own menu (the
 +// engine calls its registered exit functions before stopping). EM_ASM
 +// executes a snippet of JavaScript from C: here it calls a hook the page
@@ -261,7 +271,7 @@ index 7076dd2..5eff33a 100644
  void DG_Init()
  {
    window = SDL_CreateWindow("DOOM",
-@@ -167,7 +281,17 @@ void DG_DrawFrame()
+@@ -167,7 +291,17 @@ void DG_DrawFrame()
    SDL_RenderCopy(renderer, texture, NULL, NULL);
    SDL_RenderPresent(renderer);
  
@@ -581,3 +591,4 @@ index 256a5eb..9a1c951 100644
  
  extern vissprite_t	vissprites[MAXVISSPRITES];
  extern vissprite_t*	vissprite_p;
+
